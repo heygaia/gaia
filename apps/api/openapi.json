@@ -164,7 +164,11 @@
         "required": [
           "integrationId",
           "name",
-          "status"
+          "status",
+          "message",
+          "redirectUrl",
+          "toolsCount",
+          "error"
         ],
         "title": "AddIntegrationResponse",
         "type": "object"
@@ -2413,6 +2417,13 @@
         "properties": {
           "priority": {
             "items": {
+              "enum": [
+                "whatsapp",
+                "telegram",
+                "discord",
+                "slack",
+                "imessage"
+              ],
               "type": "string"
             },
             "minItems": 1,
@@ -2547,7 +2558,13 @@
           "slug",
           "name",
           "description",
-          "category"
+          "category",
+          "iconUrl",
+          "cloneCount",
+          "toolCount",
+          "tools",
+          "publishedAt",
+          "creator"
         ],
         "title": "CommunityIntegrationItem",
         "type": "object"
@@ -2561,7 +2578,6 @@
             "type": "boolean"
           },
           "integrations": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/CommunityIntegrationItem"
             },
@@ -2574,6 +2590,11 @@
             "type": "integer"
           }
         },
+        "required": [
+          "integrations",
+          "total",
+          "has_more"
+        ],
         "title": "CommunityListResponse",
         "type": "object"
       },
@@ -2734,7 +2755,11 @@
         "required": [
           "status",
           "integrationId",
-          "name"
+          "name",
+          "message",
+          "toolsCount",
+          "redirectUrl",
+          "error"
         ],
         "title": "ConnectIntegrationResponse",
         "type": "object"
@@ -5510,6 +5535,9 @@
             "type": "object"
           }
         },
+        "required": [
+          "platform_links"
+        ],
         "title": "GetPlatformLinksResponse",
         "type": "object"
       },
@@ -5713,13 +5741,89 @@
         "title": "GmailMessageResponse",
         "type": "object"
       },
+      "GmailMessageSummary": {
+        "additionalProperties": true,
+        "description": "One message as ``transform_gmail_message`` shapes it for the web client.\n\nThe declared fields are the derived ones every consumer reads; the raw\nGmail/Composio keys ride along via ``extra=\"allow\"`` exactly as before.",
+        "properties": {
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "cc": {
+            "default": "",
+            "title": "Cc",
+            "type": "string"
+          },
+          "from": {
+            "default": "",
+            "title": "From",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isThread": {
+            "default": false,
+            "title": "Isthread",
+            "type": "boolean"
+          },
+          "is_unread": {
+            "default": false,
+            "title": "Is Unread",
+            "type": "boolean"
+          },
+          "labelIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labelids",
+            "type": "array"
+          },
+          "replyTo": {
+            "default": "",
+            "title": "Replyto",
+            "type": "string"
+          },
+          "snippet": {
+            "default": "",
+            "title": "Snippet",
+            "type": "string"
+          },
+          "subject": {
+            "default": "",
+            "title": "Subject",
+            "type": "string"
+          },
+          "threadId": {
+            "default": "",
+            "title": "Threadid",
+            "type": "string"
+          },
+          "time": {
+            "default": "",
+            "title": "Time",
+            "type": "string"
+          },
+          "to": {
+            "default": "",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "GmailMessageSummary",
+        "type": "object"
+      },
       "GmailMessagesResponse": {
         "description": "Response for ``GET /gmail/messages`` and ``GET /gmail/search``, and the return\nshape of ``search_messages``, which the routes forward unchanged.",
         "properties": {
           "messages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/GmailMessageSummary"
             },
             "title": "Messages",
             "type": "array"
@@ -5964,6 +6068,10 @@
             "type": "object"
           }
         },
+        "required": [
+          "mode",
+          "tool_overrides"
+        ],
         "title": "HILPreferencesResponse",
         "type": "object"
       },
@@ -6186,7 +6294,11 @@
           }
         },
         "required": [
-          "auth_type"
+          "auth_url",
+          "auth_type",
+          "instructions",
+          "action_link",
+          "contact_number"
         ],
         "title": "InitiatePlatformConnectResponse",
         "type": "object"
@@ -6436,7 +6548,8 @@
         "required": [
           "integrationId",
           "content",
-          "updatedBy"
+          "updatedBy",
+          "updatedAt"
         ],
         "title": "IntegrationInstructionsResponse",
         "type": "object"
@@ -6940,7 +7053,9 @@
           }
         },
         "required": [
-          "platform"
+          "platform",
+          "username",
+          "display_name"
         ],
         "title": "LinkTokenInfoResponse",
         "type": "object"
@@ -10466,7 +10581,8 @@
         },
         "required": [
           "success",
-          "message"
+          "message",
+          "user"
         ],
         "title": "OnboardingResponse",
         "type": "object"
@@ -11640,6 +11756,180 @@
         "title": "PublicIntegrationDetailResponse",
         "type": "object"
       },
+      "PublicWorkflowCard": {
+        "description": "One marketplace card, as the community, explore and related lists emit it.\n\nThe three lists share this shape; ``categories`` and ``total_executions``\nare set only where the list has them (explore, related) and are null on the\nothers, so a consumer never has to guess which list a card came from.",
+        "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "creator": {
+            "$ref": "#/components/schemas/WorkflowCreator"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "icon_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Color"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "source_integration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Integration"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PublicWorkflowStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "system_workflow_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Workflow Key"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_executions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Executions"
+          },
+          "trigger_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriggerConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "slug",
+          "prompt",
+          "icon",
+          "icon_color",
+          "system_workflow_key",
+          "source_integration",
+          "trigger_config",
+          "steps",
+          "created_at",
+          "creator",
+          "categories",
+          "total_executions"
+        ],
+        "title": "PublicWorkflowCard",
+        "type": "object"
+      },
+      "PublicWorkflowStep": {
+        "description": "The step summary a marketplace card shows: what it does, not how.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "category"
+        ],
+        "title": "PublicWorkflowStep",
+        "type": "object"
+      },
       "PublicWorkflowsResponse": {
         "description": "Response model for listing public workflows.",
         "properties": {
@@ -11651,8 +11941,7 @@
           "workflows": {
             "description": "List of public workflows with creator info",
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PublicWorkflowCard"
             },
             "title": "Workflows",
             "type": "array"
@@ -17308,10 +17597,12 @@
           }
         },
         "required": [
+          "serverUrl",
           "roomName",
           "participantToken",
           "participantIdentity",
-          "participantName"
+          "participantName",
+          "conversation_id"
         ],
         "title": "VoiceTokenResponse",
         "type": "object"

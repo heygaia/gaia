@@ -5337,25 +5337,25 @@ export interface components {
          */
         AddIntegrationResponse: {
             /** Error */
-            error?: string | null;
+            error: string | null;
             /** Integrationid */
             integrationId: string;
             /**
              * Message
              * @default Integration added successfully
              */
-            message?: string;
+            message: string;
             /** Name */
             name: string;
             /** Redirecturl */
-            redirectUrl?: string | null;
+            redirectUrl: string | null;
             /**
              * Status
              * @enum {string}
              */
             status: "connected" | "redirect" | "error";
             /** Toolscount */
-            toolsCount?: number | null;
+            toolsCount: number | null;
         };
         /**
          * AddUserIntegrationRequest
@@ -6461,7 +6461,7 @@ export interface components {
          */
         ChannelPriorityList: {
             /** Priority */
-            priority: string[];
+            priority: ("whatsapp" | "telegram" | "discord" | "slack" | "imessage")[];
         };
         /**
          * CheckoutSource
@@ -6496,30 +6496,30 @@ export interface components {
              * Clonecount
              * @default 0
              */
-            cloneCount?: number;
-            creator?: components["schemas"]["CommunityIntegrationCreator"] | null;
+            cloneCount: number;
+            creator: components["schemas"]["CommunityIntegrationCreator"] | null;
             /** Description */
             description: string;
             /** Iconurl */
-            iconUrl?: string | null;
+            iconUrl: string | null;
             /** Integrationid */
             integrationId: string;
             /** Name */
             name: string;
             /** Publishedat */
-            publishedAt?: string | null;
+            publishedAt: string | null;
             /** Slug */
             slug: string;
             /**
              * Toolcount
              * @default 0
              */
-            toolCount?: number;
+            toolCount: number;
             /**
              * Tools
              * @default []
              */
-            tools?: components["schemas"]["IntegrationTool"][];
+            tools: components["schemas"]["IntegrationTool"][];
         };
         /**
          * CommunityListResponse
@@ -6530,17 +6530,14 @@ export interface components {
              * Has More
              * @default false
              */
-            has_more?: boolean;
-            /**
-             * Integrations
-             * @default []
-             */
-            integrations?: components["schemas"]["CommunityIntegrationItem"][];
+            has_more: boolean;
+            /** Integrations */
+            integrations: components["schemas"]["CommunityIntegrationItem"][];
             /**
              * Total
              * @default 0
              */
-            total?: number;
+            total: number;
         };
         /**
          * ComposedEmailOutput
@@ -6606,22 +6603,22 @@ export interface components {
         /** ConnectIntegrationResponse */
         ConnectIntegrationResponse: {
             /** Error */
-            error?: string | null;
+            error: string | null;
             /** Integrationid */
             integrationId: string;
             /** Message */
-            message?: string | null;
+            message: string | null;
             /** Name */
             name: string;
             /** Redirecturl */
-            redirectUrl?: string | null;
+            redirectUrl: string | null;
             /**
              * Status
              * @enum {string}
              */
             status: "connected" | "redirect" | "error";
             /** Toolscount */
-            toolsCount?: number | null;
+            toolsCount: number | null;
         };
         /**
          * ConversationActionResponse
@@ -7882,7 +7879,7 @@ export interface components {
              * Platform Links
              * @description Map of platform name to link details
              */
-            platform_links?: {
+            platform_links: {
                 [key: string]: components["schemas"]["PlatformLinkEntry"];
             };
         };
@@ -8024,11 +8021,79 @@ export interface components {
          */
         GmailMessagesResponse: {
             /** Messages */
-            messages: {
-                [key: string]: unknown;
-            }[];
+            messages: components["schemas"]["GmailMessageSummary"][];
             /** Nextpagetoken */
             nextPageToken?: string | null;
+        };
+        /**
+         * GmailMessageSummary
+         * @description One message as ``transform_gmail_message`` shapes it for the web client.
+         *
+         *     The declared fields are the derived ones every consumer reads; the raw
+         *     Gmail/Composio keys ride along via ``extra="allow"`` exactly as before.
+         */
+        GmailMessageSummary: {
+            /**
+             * Body
+             * @default
+             */
+            body?: string;
+            /**
+             * Cc
+             * @default
+             */
+            cc?: string;
+            /**
+             * From
+             * @default
+             */
+            from?: string;
+            /** Id */
+            id: string;
+            /**
+             * Is Unread
+             * @default false
+             */
+            is_unread?: boolean;
+            /**
+             * Isthread
+             * @default false
+             */
+            isThread?: boolean;
+            /** Labelids */
+            labelIds?: string[];
+            /**
+             * Replyto
+             * @default
+             */
+            replyTo?: string;
+            /**
+             * Snippet
+             * @default
+             */
+            snippet?: string;
+            /**
+             * Subject
+             * @default
+             */
+            subject?: string;
+            /**
+             * Threadid
+             * @default
+             */
+            threadId?: string;
+            /**
+             * Time
+             * @default
+             */
+            time?: string;
+            /**
+             * To
+             * @default
+             */
+            to?: string;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * GmailNewMessageConfig
@@ -8215,9 +8280,9 @@ export interface components {
              * @default always_allow
              * @enum {string}
              */
-            mode?: "always_allow" | "always_ask" | "auto";
+            mode: "always_allow" | "always_ask" | "auto";
             /** Tool Overrides */
-            tool_overrides?: {
+            tool_overrides: {
                 [key: string]: boolean;
             };
         };
@@ -8291,7 +8356,7 @@ export interface components {
              * Action Link
              * @description Optional deep-link for manual auth (e.g. Telegram bot URL)
              */
-            action_link?: string | null;
+            action_link: string | null;
             /**
              * Auth Type
              * @description Authentication type ('oauth' or 'manual')
@@ -8301,17 +8366,17 @@ export interface components {
              * Auth Url
              * @description OAuth authorization URL (if OAuth configured)
              */
-            auth_url?: string | null;
+            auth_url: string | null;
             /**
              * Contact Number
              * @description Number the user sends the linking command to (manual auth)
              */
-            contact_number?: string | null;
+            contact_number: string | null;
             /**
              * Instructions
              * @description Manual linking instructions (if manual auth)
              */
-            instructions?: string | null;
+            instructions: string | null;
         };
         /**
          * InstructionsEditor
@@ -8439,7 +8504,7 @@ export interface components {
             /** Integrationid */
             integrationId: string;
             /** Updatedat */
-            updatedAt?: string | null;
+            updatedAt: string | null;
             updatedBy: components["schemas"]["InstructionsEditor"];
         };
         /**
@@ -8688,7 +8753,7 @@ export interface components {
              * Display Name
              * @description Display name on the platform
              */
-            display_name?: string | null;
+            display_name: string | null;
             /**
              * Platform
              * @description Platform name
@@ -8698,7 +8763,7 @@ export interface components {
              * Username
              * @description Username on the platform
              */
-            username?: string | null;
+            username: string | null;
         };
         /** MarkAsReadResponse */
         MarkAsReadResponse: {
@@ -10262,7 +10327,7 @@ export interface components {
              * User
              * @description Updated user data
              */
-            user?: {
+            user: {
                 [key: string]: unknown;
             } | null;
         };
@@ -10844,6 +10909,47 @@ export interface components {
             tools?: components["schemas"]["IntegrationTool"][];
         };
         /**
+         * PublicWorkflowCard
+         * @description One marketplace card, as the community, explore and related lists emit it.
+         *
+         *     The three lists share this shape; ``categories`` and ``total_executions``
+         *     are set only where the list has them (explore, related) and are null on the
+         *     others, so a consumer never has to guess which list a card came from.
+         */
+        PublicWorkflowCard: {
+            /** Categories */
+            categories: string[] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            creator: components["schemas"]["WorkflowCreator"];
+            /** Description */
+            description: string;
+            /** Icon */
+            icon: string | null;
+            /** Icon Color */
+            icon_color: string | null;
+            /** Id */
+            id: string;
+            /** Prompt */
+            prompt: string;
+            /** Slug */
+            slug: string | null;
+            /** Source Integration */
+            source_integration: string | null;
+            /** Steps */
+            steps: components["schemas"]["PublicWorkflowStep"][];
+            /** System Workflow Key */
+            system_workflow_key: string | null;
+            /** Title */
+            title: string;
+            /** Total Executions */
+            total_executions: number | null;
+            trigger_config: components["schemas"]["TriggerConfig"] | null;
+        };
+        /**
          * PublicWorkflowsResponse
          * @description Response model for listing public workflows.
          */
@@ -10857,9 +10963,21 @@ export interface components {
              * Workflows
              * @description List of public workflows with creator info
              */
-            workflows: {
-                [key: string]: unknown;
-            }[];
+            workflows: components["schemas"]["PublicWorkflowCard"][];
+        };
+        /**
+         * PublicWorkflowStep
+         * @description The step summary a marketplace card shows: what it does, not how.
+         */
+        PublicWorkflowStep: {
+            /** Category */
+            category: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
         };
         /** PublishIntegrationResponse */
         PublishIntegrationResponse: {
@@ -13558,7 +13676,7 @@ export interface components {
              * Conversation Id
              * @description Conversation the session was started from; null for a new chat
              */
-            conversation_id?: string | null;
+            conversation_id: string | null;
             /**
              * Participantidentity
              * @description LiveKit participant identity
@@ -13583,7 +13701,7 @@ export interface components {
              * Serverurl
              * @description LiveKit server WebSocket URL
              */
-            serverUrl?: string | null;
+            serverUrl: string | null;
         };
         /**
          * WebSearchResult

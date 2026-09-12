@@ -61,7 +61,7 @@ class AddUserIntegrationResponse(SuccessResponse, CamelModel):
     connection_status: UserIntegrationStatus
 
 
-class IntegrationInstructionsResponse(CamelModel):
+class IntegrationInstructionsResponse(ResponseModel, CamelModel):
     """A user's custom instructions for one integration."""
 
     integration_id: str
@@ -172,7 +172,7 @@ class IntegrationToolsResponse(CamelModel, ResponseModel):
     count: int = 0
 
 
-class ConnectIntegrationResponse(CamelModel):
+class ConnectIntegrationResponse(ResponseModel, CamelModel):
     status: Literal["connected", "redirect", "error"]
     integration_id: str
     name: str
@@ -198,7 +198,7 @@ class CommunityIntegrationCreator(CamelModel):
     picture: str | None = None
 
 
-class CommunityIntegrationItem(CamelModel, CloneCountMixin):
+class CommunityIntegrationItem(ResponseModel, CamelModel, CloneCountMixin):
     """Integration item for community marketplace listing."""
 
     integration_id: str
@@ -214,10 +214,10 @@ class CommunityIntegrationItem(CamelModel, CloneCountMixin):
     creator: CommunityIntegrationCreator | None = None
 
 
-class CommunityListResponse(BaseModel):
+class CommunityListResponse(ResponseModel):
     """Response for community marketplace listing."""
 
-    integrations: list[CommunityIntegrationItem] = []
+    integrations: list[CommunityIntegrationItem] = Field(default_factory=list)
     total: int = 0
     has_more: bool = False
 
@@ -262,7 +262,7 @@ class PublicIntegrationDetailResponse(CamelModel, CloneCountMixin):
     content: IntegrationContent | None = None
 
 
-class AddIntegrationResponse(CamelModel):
+class AddIntegrationResponse(ResponseModel, CamelModel):
     """Response for adding a public integration to user's workspace."""
 
     integration_id: str

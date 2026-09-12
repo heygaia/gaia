@@ -16,7 +16,11 @@ from app.helpers.integration_helpers import (
     generate_integration_slug,
     parse_integration_slug,
 )
-from app.models.workflow_models import PublicWorkflowsResponse
+from app.models.workflow_models import (
+    PublicWorkflowCard,
+    PublicWorkflowsResponse,
+    public_workflow_steps,
+)
 from app.schemas.integrations.requests import ConnectIntegrationRequest
 from app.schemas.integrations.responses import (
     AddIntegrationResponse,
@@ -307,30 +311,20 @@ async def get_related_workflows(
         )
         total = await workflow_repository.count_public_by_step_category(identifier)
 
-        formatted_workflows = []
-        for row in rows:
-            normalized_steps = [
-                {
-                    "id": step.id,
-                    "title": step.title,
-                    "description": step.description,
-                    "category": step.category or "general",
-                }
-                for step in row.steps
-            ]
-            formatted_workflows.append(
-                {
-                    "id": row.id,
-                    "title": row.title,
-                    "description": row.description,
-                    "slug": row.slug,
-                    "prompt": row.prompt,
-                    "steps": normalized_steps,
-                    "total_executions": row.total_executions,
-                    "created_at": row.created_at,
-                    "creator": format_creator(row),
-                }
+        formatted_workflows = [
+            PublicWorkflowCard(
+                id=row.id,
+                title=row.title,
+                description=row.description,
+                slug=row.slug,
+                prompt=row.prompt,
+                steps=public_workflow_steps(row),
+                total_executions=row.total_executions,
+                created_at=row.created_at,
+                creator=format_creator(row),
             )
+            for row in rows
+        ]
 
         log.set(result_count=len(formatted_workflows))
         log.set(outcome="success")

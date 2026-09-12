@@ -30,7 +30,7 @@ class VoiceOption(ResponseModel):
     starred: bool = Field(default=False, description="Starred by this user")
 
 
-class VoiceTokenResponse(BaseModel):
+class VoiceTokenResponse(ResponseModel):
     """LiveKit session credentials minted by GET /token.
 
     Field names are camelCase to match what the LiveKit web client consumes.

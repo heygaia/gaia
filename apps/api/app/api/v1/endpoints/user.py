@@ -418,7 +418,11 @@ async def read_chat_channel_priority(
 ) -> ChannelPriorityList:
     """The order GAIA picks the one platform it texts on."""
     log.set(user={"id": user_id}, operation="read_chat_channel_priority")
-    return ChannelPriorityList(priority=await get_chat_channel_priority(user_id))
+    # Validated, not cast: the stored strings are checked against the ChatChannel
+    # set the same way a request body is.
+    return ChannelPriorityList.model_validate(
+        {"priority": await get_chat_channel_priority(user_id)}
+    )
 
 
 @router.patch("/chat-channel-priority")
