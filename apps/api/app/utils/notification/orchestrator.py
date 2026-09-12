@@ -377,6 +377,26 @@ class NotificationOrchestrator:
 
         return updated_notification
 
+    async def mark_all_read(self, user_id: str, channel_type: str | None = None) -> int:
+        """Mark every delivered notification for a user as read in one write.
+
+        Unlike ``bulk_actions``, this does not require the caller to already know
+        every notification ID — it operates server-side on all matching
+        notifications, including any not yet loaded into a client's paginated view.
+        """
+        log.info(
+            f"{LogTag.NOTIFICATION} Marking all notifications as read for user",
+            user_id=user_id,
+            channel_type=channel_type,
+        )
+        updated_count = await self.storage.mark_all_read(user_id, channel_type=channel_type)
+
+        await websocket_manager.broadcast_to_user(
+            user_id, {"type": "notification.all_read", "channel_type": channel_type}
+        )
+
+        return updated_count
+
     async def archive_notification(self, notification_id: str, user_id: str) -> bool:
         """Archive a notification."""
         notification = await self.storage.get_notification(notification_id, user_id)

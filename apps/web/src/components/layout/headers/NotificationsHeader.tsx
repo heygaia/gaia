@@ -19,25 +19,18 @@ export default function NotificationsHeader({
   onMarkAllAsRead,
 }: NotificationsHeaderProps) {
   return (
-    <div className="flex w-full items-center justify-between">
-      <div className="flex w-full items-center justify-between">
-        <HeaderTitle
-          icon={<NotificationIcon width={20} height={20} />}
-          text="Notifications"
-        />
+    <div className="flex w-full items-center justify-between gap-4">
+      <HeaderTitle
+        icon={<NotificationIcon width={20} height={20} />}
+        text="Notifications"
+      />
 
-        <div className="relative ml-auto flex items-center pr-1">
-          {unreadCount > 0 && (
-            <Button variant="flat" onPress={onMarkAllAsRead}>
-              Mark All as Read
-            </Button>
-          )}
-        </div>
-
+      <div className="flex items-center gap-3">
         <Tabs
           aria-label="Notifications"
           selectedKey={selectedTab}
           onSelectionChange={(key) => onTabChange(key as string)}
+          variant="underlined"
         >
           <Tab
             key="unread"
@@ -54,6 +47,12 @@ export default function NotificationsHeader({
           />
           <Tab key="all" title="All" />
         </Tabs>
+
+        {unreadCount > 0 && (
+          <Button variant="flat" size="sm" onPress={onMarkAllAsRead}>
+            Mark All as Read
+          </Button>
+        )}
       </div>
     </div>
   );

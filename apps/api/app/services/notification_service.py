@@ -84,6 +84,9 @@ class NotificationService:
     ) -> dict[str, bool]:
         return await self.orchestrator.bulk_actions(notification_ids, user_id, action)
 
+    async def mark_all_read(self, user_id: str, channel_type: str | None = None) -> int:
+        return await self.orchestrator.mark_all_read(user_id, channel_type=channel_type)
+
     # WebSocket management
 
     # Registration methods

@@ -5,6 +5,8 @@ on it. Updates are free-form field patches (an action result may set arbitrary
 fields), so they go through ``update_fields`` rather than a rigid update model.
 """
 
+from datetime import UTC, datetime
+
 from app.constants.cache import REPO_GLOBAL_SCOPE
 from app.db.repositories.base import MongoRepository
 from app.models.notification.notification_models import (
@@ -67,6 +69,18 @@ class NotificationRepository(MongoRepository[NotificationRecord, NotificationUpd
         channel_type: str | None = None,
     ) -> int:
         return await self._count(self._user_filter(user_id, status, channel_type, None, None))
+
+    async def mark_all_read_for_user(self, user_id: str, *, channel_type: str | None = None) -> int:
+        """Mark every DELIVERED notification for a user as READ in one write.
+
+        Returns the number of notifications updated.
+        """
+        filter_ = self._user_filter(user_id, NotificationStatus.DELIVERED, channel_type, None, None)
+        return await self._apply_raw_update_many(
+            filter_,
+            {"$set": {"status": NotificationStatus.READ.value, "read_at": datetime.now(UTC)}},
+            scope=REPO_GLOBAL_SCOPE,
+        )
 
     def _user_filter(
         self,

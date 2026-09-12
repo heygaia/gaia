@@ -545,6 +545,33 @@ class _BaseRepository(Generic[TDoc, TUpdate]):
             await self._invalidate(scope)
         return result.matched_count
 
+    async def _apply_raw_update_many(
+        self,
+        filter_: Mapping[str, object],
+        update: Mapping[str, Mapping[str, object]],
+        *,
+        scope: str,
+    ) -> int:
+        """Apply a raw Mongo update to every matching document in one write.
+
+        Unlike ``_apply_raw_update``/``_apply_raw_update_unfetched``, this can
+        touch an unbounded number of documents, so there is no per-entity cache
+        to refresh or evict — only the scope's generation counter is bumped,
+        which invalidates any cached query for it. An individually-cached entity
+        key among the touched documents goes stale until its own TTL expires;
+        this is the seam for domains with ``cache_policy = None`` (no entity
+        cache exists at all) or where that staleness window is acceptable.
+        Returns the number of documents modified.
+        """
+        ops: dict[str, dict[str, object]] = {k: dict(v) for k, v in update.items()}
+        if self.auto_stamp_timestamps and "updated_at" in self.document_model.model_fields:
+            ops.setdefault("$set", {})["updated_at"] = datetime.now(UTC)
+        collection = get_async_collection(self.collection_name)
+        result = await collection.update_many(dict(filter_), ops)
+        if result.modified_count:
+            await self._invalidate(scope)
+        return int(result.modified_count)
+
     async def _find_one_projected(
         self,
         filter_: Mapping[str, object],

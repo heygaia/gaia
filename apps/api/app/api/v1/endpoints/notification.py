@@ -32,6 +32,7 @@ from app.models.notification.notification_models import (
 from app.models.notification.request_models import (
     BulkActionRequest,
     BulkActionSummary,
+    MarkAllReadSummary,
     NotificationResponse,
     PaginatedNotificationsResponse,
 )
@@ -367,6 +368,50 @@ async def bulk_actions(
             f"{LogTag.NOTIFICATION} Failed to perform bulk actions",
             user_id=user_id,
             notification_count=len(notification_ids),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/notifications/mark-all-read")
+async def mark_all_read(
+    channel_type: str | None = Query(None, description="Only mark notifications on this channel"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> NotificationResponse[MarkAllReadSummary]:
+    """Mark every delivered notification for the user as read, server-side.
+
+    Operates on every matching notification, not just the ones the caller has
+    currently loaded — this is what lets "mark all as read" cover notifications
+    beyond the first page a paginated client has fetched.
+    """
+    user_id = current_user.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not authenticated or user_id not found")
+
+    log.set(
+        user={"id": user_id},
+        operation="mark_all_read",
+        notification=NotificationContext(operation="mark_all_read", channel=channel_type)
+        if channel_type
+        else NotificationContext(operation="mark_all_read"),
+    )
+
+    try:
+        updated_count = await notification_service.mark_all_read(user_id, channel_type=channel_type)
+
+        log.set(outcome="success")
+        log.set_ns("notification", result_count=updated_count, success=True)
+        return NotificationResponse(
+            success=True,
+            message=f"Marked {updated_count} notifications as read",
+            data=MarkAllReadSummary(updated_count=updated_count),
+        )
+
+    except Exception as e:
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to mark all notifications as read",
+            user_id=user_id,
             error_type=type(e).__name__,
             error=str(e),
         )

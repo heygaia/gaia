@@ -34,7 +34,7 @@ export function NotificationCenter({
     [activeTab],
   );
 
-  const { notifications, unreadCount, loading, markAsRead, bulkMarkAsRead } =
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } =
     useNotifications(notificationOptions);
 
   const handleMarkAsRead = async (notificationId: string) => {
@@ -46,13 +46,10 @@ export function NotificationCenter({
   };
 
   const handleMarkAllAsRead = async () => {
-    const unreadIds = notifications.flatMap((n) =>
-      n.status === NotificationStatus.DELIVERED ? [n.id] : [],
-    );
-    if (unreadIds.length === 0) return;
+    if (unreadCount === 0) return;
     setIsMarkingAllRead(true);
     try {
-      await bulkMarkAsRead(unreadIds);
+      await markAllAsRead();
     } finally {
       setIsMarkingAllRead(false);
     }

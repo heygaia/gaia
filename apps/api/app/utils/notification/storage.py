@@ -67,3 +67,9 @@ class MongoDBNotificationStorage:
         return await notification_repository.count_for_user(
             user_id, status=status, channel_type=channel_type
         )
+
+    async def mark_all_read(self, user_id: str, channel_type: str | None = None) -> int:
+        """Mark every delivered notification for a user as read. Returns the count updated."""
+        return await notification_repository.mark_all_read_for_user(
+            user_id, channel_type=channel_type
+        )

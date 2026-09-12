@@ -426,6 +426,49 @@ class TestBulkActions:
 
 
 # ---------------------------------------------------------------------------
+# POST /notifications/mark-all-read
+# ---------------------------------------------------------------------------
+
+
+class TestMarkAllRead:
+    """POST /api/v1/notifications/mark-all-read"""
+
+    @patch(
+        "app.api.v1.endpoints.notification.notification_service.mark_all_read",
+        new_callable=AsyncMock,
+    )
+    async def test_mark_all_read_success(self, mock_mark_all: AsyncMock, client: AsyncClient):
+        mock_mark_all.return_value = 7
+        response = await client.post(f"{NOTIF_BASE}/mark-all-read")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+        assert body["data"]["updated_count"] == 7
+        mock_mark_all.assert_awaited_once_with(FAKE_USER_ID, channel_type=None)
+
+    @patch(
+        "app.api.v1.endpoints.notification.notification_service.mark_all_read",
+        new_callable=AsyncMock,
+    )
+    async def test_mark_all_read_passes_channel_type(
+        self, mock_mark_all: AsyncMock, client: AsyncClient
+    ):
+        mock_mark_all.return_value = 3
+        response = await client.post(f"{NOTIF_BASE}/mark-all-read?channel_type=inapp")
+        assert response.status_code == 200
+        mock_mark_all.assert_awaited_once_with(FAKE_USER_ID, channel_type="inapp")
+
+    @patch(
+        "app.api.v1.endpoints.notification.notification_service.mark_all_read",
+        new_callable=AsyncMock,
+    )
+    async def test_mark_all_read_error(self, mock_mark_all: AsyncMock, client: AsyncClient):
+        mock_mark_all.side_effect = Exception("boom")
+        response = await client.post(f"{NOTIF_BASE}/mark-all-read")
+        assert response.status_code == 500
+
+
+# ---------------------------------------------------------------------------
 # POST /notifications/register-device
 # ---------------------------------------------------------------------------
 
