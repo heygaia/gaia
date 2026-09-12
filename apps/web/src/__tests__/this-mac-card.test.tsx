@@ -26,7 +26,9 @@ const bridge = {
   listServers: vi.fn(),
   addServer: vi.fn(),
   removeServer: vi.fn(),
+  retryServer: vi.fn(),
   onStatusChanged: vi.fn(() => noop),
+  onServersChanged: vi.fn(() => noop),
 };
 
 /** Stand-in unsubscribe for the status-change listener. */
@@ -58,6 +60,7 @@ function Harness() {
 beforeEach(() => {
   vi.clearAllMocks();
   bridge.onStatusChanged.mockReturnValue(noop);
+  bridge.onServersChanged.mockReturnValue(noop);
   bridge.listServers.mockResolvedValue(ok<ServerConfig[]>([]));
 });
 

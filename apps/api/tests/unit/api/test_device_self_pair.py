@@ -6,22 +6,26 @@ actually executes. Only the Postgres session and PostHog client are faked.
 """
 
 import contextlib
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 import pytest
 
+from app.api.v1.endpoints.device import self_pair
 from app.constants.device_bridge import MAX_ACTIVE_DEVICES_PER_USER
 from app.models.device import DeviceStatus
+from app.schemas.device.requests import SelfPairRequest
 from app.services.analytics_service import AnalyticsEvents
 from app.services.device.device_auth import hash_refresh_token
 from shared.py.wide_events import log as wide_log
+from tests.helpers import captured_wide_event
 
 pytestmark = pytest.mark.unit
 
 BASE = "/api/v1/device"
 _DB_SESSION = "app.services.device.device_service.get_db_session"
 _CAPTURE = "app.api.v1.endpoints.device.capture_event"
+_SELF_PAIR = "app.api.v1.endpoints.device.self_pair_device"
 
 _BODY = {
     "name": "My Mac",
@@ -110,6 +114,80 @@ class TestSelfPairEndpoint:
         assert audit_kwargs["actor"] == fake_user["user_id"]
         assert audit_kwargs["resource"] == body["device_id"]
         assert audit_kwargs["flow"] == "self_pair"
+
+    async def test_delegates_to_service_and_maps_response(
+        self, client: AsyncClient, fake_user: dict
+    ) -> None:
+        """Pin the handler's contract with the service seam and the response mapping.
+
+        The real-service test above cannot pin *which* args reach the service
+        (name/platform/daemon_version are never asserted on the created row) nor
+        the exact device id in the response (it is minted at random). Mocking the
+        seam with distinct sentinels makes an arg drop/reorder/None, a field
+        swap, or a wrong analytics prop observable.
+        """
+        with (
+            patch(_SELF_PAIR, new_callable=AsyncMock) as mock_self_pair,
+            patch(_CAPTURE) as mock_capture,
+            patch.object(wide_log, "audit") as mock_audit,
+        ):
+            mock_self_pair.return_value = ("dev-xyz", "refresh-abc")
+            resp = await client.post(f"{BASE}/self-pair", json=_BODY)
+
+        assert resp.status_code == 200
+        # Exact response mapping — kills field swaps and constant-return mutants.
+        assert resp.json() == {
+            "device_id": "dev-xyz",
+            "refresh_token": "refresh-abc",
+            "name": "My Mac",
+        }
+
+        # Exact positional contract — kills arg drop/reorder/None on the service call.
+        mock_self_pair.assert_awaited_once_with(
+            fake_user["user_id"], "My Mac", "macos", "desktop", "1.2.3"
+        )
+
+        # Attributed to the resolved user id, with the request's client/platform.
+        mock_capture.assert_called_once_with(
+            fake_user["user_id"],
+            AnalyticsEvents.DEVICE_SELF_PAIRED,
+            {"client": "desktop", "platform": "macos"},
+        )
+
+        credential_audits = [
+            c
+            for c in mock_audit.call_args_list
+            if c.args and c.args[0] == "device credential issued"
+        ]
+        assert len(credential_audits) == 1
+        audit_kwargs = credential_audits[0].kwargs
+        assert audit_kwargs["actor"] == fake_user["user_id"]
+        assert audit_kwargs["resource"] == "dev-xyz"
+        assert audit_kwargs["flow"] == "self_pair"
+
+    async def test_self_pair_stamps_the_wide_event_device_and_user(self, fake_user: dict) -> None:
+        """The handler's log.set + log.set_ns build the request's wide-event
+        ``device`` and ``user`` namespaces. Asserting them exactly catches a
+        dropped/renamed/None field (operation, client, user id, device_id) that
+        the HTTP-level tests above cannot see. Call the handler directly so its
+        log writes land on the captured event."""
+        payload = SelfPairRequest(
+            name="My Mac", platform="macos", client="desktop", daemon_version="1.2.3"
+        )
+        with (
+            patch(_SELF_PAIR, new_callable=AsyncMock, return_value=("dev-xyz", "refresh-abc")),
+            patch(_CAPTURE),
+        ):
+            async with captured_wide_event() as event:
+                resp = await self_pair(payload, user_id=fake_user["user_id"])
+
+        assert resp.device_id == "dev-xyz"
+        assert event["device"] == {
+            "operation": "self_pair",
+            "client": "desktop",
+            "device_id": "dev-xyz",
+        }
+        assert event["user"] == {"id": fake_user["user_id"]}
 
     async def test_unauthenticated_returns_401(self, unauthed_client: AsyncClient) -> None:
         resp = await unauthed_client.post(f"{BASE}/self-pair", json=_BODY)

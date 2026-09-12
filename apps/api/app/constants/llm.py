@@ -308,7 +308,7 @@ PAID_COMMS_REASONING: dict[str, Any] = {"effort": "medium"}
 # endpoint/key/model all come from the DEV_LLM_* settings). 64k fits under the
 # completion ceilings of the cheap lanes this is meant for (e.g. DeepSeek V4
 # Flash caps at 65,536).
-DEV_LLM_MAX_OUTPUT_TOKENS = 64_000
+DEV_LLM_MAX_OUTPUT_TOKENS = 32_000  # local: fits OpenAI gpt-4.1's 32,768 output cap
 
 # OpenRouter app attribution (https://openrouter.ai/docs/app-attribution). The
 # OpenRouter client surfaces these as the HTTP-Referer / X-Title /

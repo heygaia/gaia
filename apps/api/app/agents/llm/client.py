@@ -701,7 +701,11 @@ def _is_openrouter_wire(runnable: Runnable) -> bool:
             # endpoint (the DEV_LLM_* custom lane, e.g. api.openai.com) is not
             # talking to OpenRouter and rejects the unknown argument. Bind only
             # when the endpoint is OpenRouter's own (base unset = its default).
-            base = getattr(node, "openrouter_api_base", None)
+            # Direct attribute access, not getattr(..., None): isinstance above
+            # guarantees a ChatOpenRouter, whose openrouter_api_base is always a
+            # present pydantic field (default None) — a getattr default would be
+            # dead code.
+            base = node.openrouter_api_base
             return base is None or "openrouter.ai" in str(base)
         if isinstance(node, RunnableBinding):
             node = node.bound

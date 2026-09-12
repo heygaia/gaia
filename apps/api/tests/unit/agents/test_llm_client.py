@@ -2837,3 +2837,40 @@ class TestWithUsageHandler:
 
     def test_no_handler_and_no_config_still_yields_a_config(self) -> None:
         assert _with_usage_handler(None, None) == RunnableConfig()
+
+
+@pytest.mark.unit
+class TestIsOpenrouterWire:
+    """`_is_openrouter_wire` decides whether the sticky session_id may be bound:
+    only when the client actually talks to OpenRouter's own endpoint. Aiming a
+    ChatOpenRouter at another OpenAI-compatible base (the DEV_LLM_* lane) must
+    say no, or that endpoint rejects the unknown session_id argument."""
+
+    def test_default_base_is_openrouter(self) -> None:
+        # No base set = OpenRouter's own default endpoint.
+        node = ChatOpenRouter(model="m", api_key="k")
+        assert client_module._is_openrouter_wire(node) is True
+
+    def test_explicit_openrouter_base_is_openrouter(self) -> None:
+        # base set but pointing at openrouter.ai — exercises the substring match,
+        # which the default-None case never reaches.
+        node = ChatOpenRouter(
+            model="m", api_key="k", openrouter_api_base="https://openrouter.ai/api/v1"
+        )
+        assert client_module._is_openrouter_wire(node) is True
+
+    def test_non_openrouter_base_is_not_openrouter(self) -> None:
+        # A ChatOpenRouter aimed at another OpenAI-compatible endpoint is NOT
+        # OpenRouter — kills the getattr-name and base-is-None-only mutants.
+        node = ChatOpenRouter(
+            model="m", api_key="k", openrouter_api_base="https://api.openai.com/v1"
+        )
+        assert client_module._is_openrouter_wire(node) is False
+
+    def test_walks_through_a_binding_to_a_non_openrouter_client(self) -> None:
+        inner = ChatOpenRouter(
+            model="m", api_key="k", openrouter_api_base="https://api.openai.com/v1"
+        )
+        binding = NonCallableMagicMock(spec=RunnableBinding)
+        binding.bound = inner
+        assert client_module._is_openrouter_wire(binding) is False

@@ -898,11 +898,27 @@ It runs over one outbound tunnel - no inbound ports.
 4. Keep it online:  gaia bridge up   (the device is online only while this runs)
 
 ## Using a connected device
-Device servers appear as ordinary connected integrations. To act on the user's
-real files or machine, use that device's tools (list_devices shows what each
-device exposes and whether it is online). Never answer a question about the
-user's own files by running commands in the cloud sandbox - the sandbox cannot
-see the user's machine.
+A connected device gives you two DIFFERENT capabilities, reached two different ways:
+
+1. Its MCP servers' tools. When a device MCP server is added it is connected and
+   its tools are indexed into tool-retrieval exactly like any other integration -
+   so they surface through `retrieve_tools` (semantic search over all connected
+   tools) and you use them by handing off to that server's subagent, the SAME as
+   a cloud MCP. You do NOT shell out to an MCP server. `list_devices` shows each
+   server, its integration_id (the handoff target), and whether its tools are
+   synced yet (a server GAIA never reached has none). Indexing runs in the
+   background once the device is online, so a just-added server can take a moment
+   to appear in `retrieve_tools`.
+2. Shell + file access on the machine. Use `run_on_device(device_id, command)` to
+   run a shell command on the user's real machine - read/edit files, run a build,
+   list a directory. This is the ONLY way to touch the user's real files; the
+   cloud sandbox is a separate container that cannot see their machine, so never
+   answer a question about the user's own files by running commands in the sandbox.
+
+Both need the device online (`gaia bridge up`); `list_devices` shows live status.
+The routing is not magic: a device server's tools are addressed internally as
+`device://<device_id>/<server_key>` and every call runs on that machine over the
+one outbound tunnel.
 
 ## Managing
 gaia bridge ls (status), gaia bridge rm <key> (remove a server),

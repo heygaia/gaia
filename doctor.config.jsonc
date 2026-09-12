@@ -44,6 +44,15 @@
         "files": ["libs/shared/ts/src/bots/consumer/outbound-consumer.ts"],
         "rules": ["react-doctor/async-await-in-loop"]
       },
+      // Tunnel.run() is a reconnection supervisor loop: each iteration awaits
+      // one full connection lifecycle (connectOnce resolves only when the
+      // socket closes or errors) and then a backoff sleep. async-await-in-loop's
+      // Promise.all suggestion is inapplicable — parallelizing would open many
+      // simultaneous tunnels. Sequential await is the correctness guarantee.
+      {
+        "files": ["libs/shared/ts/src/bridge-core/tunnel.ts"],
+        "rules": ["react-doctor/async-await-in-loop"]
+      },
       // The wake-word controller's lifetime is managed imperatively (start()
       // creates it, stop() disposes it), not by an effect, so the three
       // listeners are attached in start() and released by detachListeners().

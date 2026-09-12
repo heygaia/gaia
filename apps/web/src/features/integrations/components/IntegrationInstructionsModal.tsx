@@ -81,7 +81,7 @@ export const IntegrationInstructionsModal = ({
         size={16}
       />
     ),
-    [integration.id, integration.iconUrl],
+    [integration.id, integration.iconUrl, integration.category],
   );
 
   // Preview: mentions become `mention:` links the anchor override renders as

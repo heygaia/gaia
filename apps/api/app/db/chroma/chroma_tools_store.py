@@ -240,7 +240,9 @@ def _is_dynamic_subagent(composite_key: str, namespace: str) -> bool:
     executor loses its handoff target for connected custom/device MCP servers."""
     if namespace != _SUBAGENTS_NAMESPACE:
         return False
-    key = composite_key.split("::", 1)[-1]
+    # Composite keys are "<namespace>::<name>"; take the part after the first
+    # separator (partition, not split(...)[-1], so the intent is unambiguous).
+    key = composite_key.partition("::")[2]
     return not key.startswith(_BUILTIN_SUBAGENT_PREFIX)
 
 

@@ -65,6 +65,13 @@ MODEL_PRICING: dict[str, ModelPricing] = {
         output_cost_per_1k=0.00012852,
         cached_input_cost_per_1k=0.000012852,
     ),
+    # LOCAL DEV TESTING ONLY (DEV_LLM_MODEL=gpt-4.1-mini over the OpenAI custom
+    # lane) - do not ship. OpenAI list price: $0.40/$1.60 per 1M in/out, $0.10 cached.
+    "gpt-4.1-mini": ModelPricing(
+        input_cost_per_1k=0.0004,
+        output_cost_per_1k=0.0016,
+        cached_input_cost_per_1k=0.0001,
+    ),
 }
 
 

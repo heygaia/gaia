@@ -365,6 +365,8 @@ unfixable = [
 "apps/api/tests/e2e/test_todo_trigger_dispatch_e2e.py" = ["PLR0913"]  # _seed_watch is a test helper whose keyword arguments mirror the subscription fields under test
 "apps/api/tests/unit/services/test_todo_service.py" = ["PLR0913"]  # test parameterization, not production complexity
 "apps/api/tests/unit/services/test_trigger_service.py" = ["PLR0913"]  # test parameterization, not production complexity
+"apps/api/tests/unit/agents/context/test_sections.py" = ["PLR0913"]  # ctx() is a test factory whose keyword args mirror the SectionContext fields under test, not reducible complexity
+"apps/api/tests/integration/real/test_device_bridge_e2e.py" = ["PLR0915"]  # the golden-path e2e test is one linear 8-step journey; splitting its statements into helpers hides the flow it exists to prove
 # A002: chromadb's EmbeddingFunction protocol calls
 # `self._embedding_function(input=input)` by keyword (see
 # chromadb/api/models/CollectionCommon.py), so the one implementation must

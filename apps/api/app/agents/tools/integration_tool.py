@@ -26,6 +26,7 @@ from app.helpers.integration_helpers import (
     normalize_server_url,
 )
 from app.models.agent_models import agent_configurable
+from app.models.device import Device
 from app.models.device_models import DeviceInfo, DeviceServerInfo, ListDevicesResult
 from app.models.integration_models import (
     AuthType,
@@ -573,6 +574,30 @@ async def approve_device_pairing(user_code: str) -> str:
     return request_device_approval(code)
 
 
+def _full_disk_access_hint(device: Device) -> str:
+    """Guidance appended when a device command hits a macOS TCC (privacy) block.
+
+    The grantee differs by client: the desktop app is itself the grantee (reopen
+    it), while the CLI daemon inherits its terminal's grant (restart it)."""
+    if device.client == "desktop":
+        fix = (
+            "This device is the GAIA desktop app. Tell the user to grant it Full Disk "
+            "Access in System Settings > Privacy & Security > Full Disk Access (enable "
+            "GAIA), then reopen the app — the grant carries into the commands it runs."
+        )
+    else:
+        fix = (
+            "This device is the gaia CLI. Tell the user to grant their terminal Full Disk "
+            "Access in System Settings > Privacy & Security > Full Disk Access, then "
+            "restart the bridge with `gaia bridge down && gaia bridge up`."
+        )
+    return (
+        "\nmacOS blocked this path with its privacy protection (TCC); you cannot grant "
+        f"this yourself. {fix} They can open that pane with "
+        '`open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`.'
+    )
+
+
 @tool
 @with_doc(RUN_ON_DEVICE)
 async def run_on_device(device_id: str, command: str, config: RunnableConfig) -> str:
@@ -614,23 +639,7 @@ async def run_on_device(device_id: str, command: str, config: RunnableConfig) ->
     # here. The fix differs by device: the desktop app IS the grantee (reopen it),
     # while the CLI daemon inherits its terminal's grant (restart it).
     if "operation not permitted" in (result.stderr or "").lower():
-        if device.client == "desktop":
-            fix = (
-                "This device is the GAIA desktop app. Tell the user to grant it Full Disk "
-                "Access in System Settings > Privacy & Security > Full Disk Access (enable "
-                "GAIA), then reopen the app — the grant carries into the commands it runs."
-            )
-        else:
-            fix = (
-                "This device is the gaia CLI. Tell the user to grant their terminal Full Disk "
-                "Access in System Settings > Privacy & Security > Full Disk Access, then "
-                "restart the bridge with `gaia bridge down && gaia bridge up`."
-            )
-        parts.append(
-            "\nmacOS blocked this path with its privacy protection (TCC); you cannot grant "
-            f"this yourself. {fix} They can open that pane with "
-            '`open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`.'
-        )
+        parts.append(_full_disk_access_hint(device))
     return "\n".join(parts)
 
 

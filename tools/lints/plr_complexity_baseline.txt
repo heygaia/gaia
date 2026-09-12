@@ -66,7 +66,6 @@ apps/api/app/services/chat/persistence.py	PLR0913
 apps/api/app/services/composio/proxy_client.py	PLR0913
 apps/api/app/services/hil/approvals_store.py	PLR0913
 apps/api/app/services/hil/bridge.py	PLR0913
-apps/api/app/services/integrations/custom_crud.py	PLR0912
 apps/api/app/services/integrations/integration_connection_service.py	PLR0911
 apps/api/app/services/integrations/integration_connection_service.py	PLR0913
 apps/api/app/services/mcp/langchain_adapter.py	PLR0912
@@ -126,7 +125,6 @@ apps/api/tests/integration/mcp/test_mcp_oauth_flow.py	PLR0913
 apps/api/tests/integration/mcp/test_mcp_oauth_flow.py	PLR0915
 apps/api/tests/integration/real/memory/llm.py	PLR0913
 apps/api/tests/integration/real/test_schemathesis.py	PLR0912
-apps/api/tests/unit/agents/context/test_sections.py	PLR0913
 apps/api/tests/unit/agents/test_mail_templates.py	PLR0913
 apps/api/tests/unit/agents/test_messages.py	PLR0913
 apps/api/tests/unit/api/test_integrations_config_endpoint.py	PLR0913
