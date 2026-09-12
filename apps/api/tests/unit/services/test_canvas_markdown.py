@@ -254,6 +254,23 @@ class TestSplitLegacyCanvas:
 
         assert activity == ("- 2026-08-20T10:00:00+00:00 zulu\n\n- 2026-08-20T10:00:00+00:00 alpha")
 
+    def test_undated_entry_sorts_after_a_same_date_dated_entry(self):
+        """An undated line whose text sorts before a dated entry's line still
+        follows it: the key is the timestamp, not the rendered entry."""
+        _, activity = split_legacy_canvas(
+            "## Activity Log\n- a-note\n- 2026-08-20T10:00:00+00:00 z\n"
+        )
+
+        assert activity == "- 2026-08-20T10:00:00+00:00 z\n\n- a-note"
+
+    def test_trailing_whitespace_before_a_removed_section_is_preserved(self):
+        """Only newlines are stripped from the preceding text — a trailing
+        space stays. Pins `rstrip("\\n")` (rstrip with no argument would eat
+        the space)."""
+        new_canvas, _ = split_legacy_canvas("# T \n\n## Timeline\n- a\n\n## B\n2\n")
+
+        assert new_canvas == "# T \n\n## B\n2\n"
+
     def test_section_between_content_keeps_blank_line_before_the_next_heading(self):
         """A removed section with content both before and after — pins the
         `before and after.startswith("\\n## ")` blank-line branch."""
