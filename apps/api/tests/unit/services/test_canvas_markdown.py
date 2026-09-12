@@ -7,6 +7,7 @@ import pytest
 from app.services.canvas_markdown import (
     _extract_entries,
     _line_timestamp,
+    _remove_section,
     section_body,
     split_legacy_canvas,
 )
@@ -176,6 +177,40 @@ class TestSplitLegacyCanvas:
         assert _line_timestamp("- 2026-08-21T09:00:00+02:00 rest") == datetime.fromisoformat(
             "2026-08-21T09:00:00+02:00"
         )
+
+    def test_root_level_section_removal_has_no_extra_blank_line(self):
+        """A section that is the FIRST heading has no preceding content, so the
+        blank-line preservation must not fire. Pins `before and ...` (an `or`
+        would insert an extra leading newline)."""
+        new_canvas, activity = split_legacy_canvas("## Timeline\n- a\n\n## B\n2\n")
+
+        assert new_canvas == "\n## B\n2\n"
+        assert activity == "- a"
+
+    def test_multiple_dated_blocks_and_undated_text_merge(self):
+        """Two dated blocks plus an undated line: `_extract_entries` returns
+        them in source order (the merge sorts downstream)."""
+        dated, undated = _extract_entries(
+            "- 2026-08-22T10:00:00+00:00 late\nnote line\n- 2026-08-20T10:00:00+00:00 early"
+        )
+
+        assert [entry for _, entry in dated] == [
+            "- 2026-08-22T10:00:00+00:00 late",
+            "- 2026-08-20T10:00:00+00:00 early",
+        ]
+        assert undated == ["note line"]
+
+    def test_all_dated_entries_drop_the_undated_list(self):
+        """When every entry is dated the result is the sorted dated list and
+        nothing else — pins the `merged if merged else None` tail."""
+        _, activity = split_legacy_canvas(
+            "## Activity Log\n- 2026-08-22T10:00:00+00:00 late\n- 2026-08-20T10:00:00+00:00 early\n"
+        )
+
+        assert activity == ("- 2026-08-20T10:00:00+00:00 early\n\n- 2026-08-22T10:00:00+00:00 late")
+
+    def test_remove_section_is_a_noop_when_absent(self):
+        assert _remove_section("# T\n\n## B\n2\n", "Missing") == ("# T\n\n## B\n2\n", None)
 
 
 @pytest.mark.parametrize("heading", ["Activity Log", "Timeline"])
