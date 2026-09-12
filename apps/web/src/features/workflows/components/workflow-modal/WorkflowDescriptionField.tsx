@@ -1,7 +1,7 @@
 import { Button } from "@heroui/button";
 import { Tooltip } from "@heroui/tooltip";
 import { SparklesIcon } from "@icons";
-import type { Schema } from "@shared/api/generated";
+import type { PromptTriggerHint } from "@shared/api/generated";
 import { useMemo, useState } from "react";
 import {
   type Control,
@@ -24,7 +24,7 @@ import WorkflowSection from "./WorkflowSection";
 /** The trigger facts the prompt generator can use; the draft carries more. */
 const toPromptTriggerHint = (
   draft: WorkflowFormData["trigger_config"] | undefined,
-): Schema<"PromptTriggerHint"> | undefined =>
+): PromptTriggerHint | undefined =>
   draft
     ? {
         type: draft.type,

@@ -1,11 +1,14 @@
 // Recurrence types for calendar events
 export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
-export type RecurrenceRule = Schema<"RecurrenceRule">;
+import type {
+  EventCreateRequest,
+  GoogleCalendarEventResource,
+  RecurrenceData,
+} from "@shared/api/generated";
 
-export type RecurrenceData = Schema<"RecurrenceData">;
+export type { RecurrenceData, RecurrenceRule } from "@shared/api/generated";
 
-import type { Schema } from "@shared/api/generated";
 import type { CalendarItem } from "@/types/api/calendarApiTypes";
 
 export interface CalendarCardProps {
@@ -48,11 +51,11 @@ export interface BirthdayProperties {
  * schema is what this interface describes. This is the one place that says so.
  */
 export const asGoogleCalendarEvents = (
-  events: Schema<"GoogleCalendarEventResource">[],
+  events: GoogleCalendarEventResource[],
 ): GoogleCalendarEvent[] => events as unknown as GoogleCalendarEvent[];
 
 export const asGoogleCalendarEvent = (
-  event: Schema<"GoogleCalendarEventResource">,
+  event: GoogleCalendarEventResource,
 ): GoogleCalendarEvent => event as unknown as GoogleCalendarEvent;
 
 export interface GoogleCalendarEvent {
@@ -135,7 +138,7 @@ export interface SingleTimeEvent extends BaseEvent {
 export type CalendarEvent = TimedEvent | SingleTimeEvent;
 
 /** `POST /calendar/event` body. */
-export type EventCreatePayload = Schema<"EventCreateRequest">;
+export type EventCreatePayload = EventCreateRequest;
 
 // Calendar types for conversation messages
 export type CalendarOptions = {

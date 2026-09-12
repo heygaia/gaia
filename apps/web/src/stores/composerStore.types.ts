@@ -1,15 +1,18 @@
 /**
  * Data for the message being replied to.
  */
-import type { Schema } from "@shared/api/generated";
+import type { SelectedWorkflowDataOutput } from "@shared/api/generated";
 
-export type ReplyToMessageData = Schema<"ReplyToMessageData">;
+export type {
+  ReplyToMessageData,
+  SelectedCalendarEventData,
+} from "@shared/api/generated";
 
 /**
  * A workflow the user picked outside the composer (sidebar, workflow page,
  * modal) and attached to the next message.
  */
-export type SelectedWorkflowData = Schema<"SelectedWorkflowData-Output">;
+export type SelectedWorkflowData = SelectedWorkflowDataOutput;
 
 export interface WorkflowSelectionOptions {
   /** Immediately run the workflow as a chat turn on arrival at /c. */
@@ -17,4 +20,3 @@ export interface WorkflowSelectionOptions {
 }
 
 /** A calendar event attached to the next message. */
-export type SelectedCalendarEventData = Schema<"SelectedCalendarEventData">;

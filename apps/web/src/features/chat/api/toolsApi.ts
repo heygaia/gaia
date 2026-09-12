@@ -1,7 +1,6 @@
-import type { Schema } from "@shared/api/generated";
-import { api } from "@/lib/api/typed";
+export type { ToolInfo } from "@shared/api/generated";
 
-export type ToolInfo = Schema<"ToolInfo">;
+import { api } from "@/lib/api/typed";
 
 export const fetchAvailableTools = () =>
   api.get("/api/v1/tools", {

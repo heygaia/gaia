@@ -88,14 +88,13 @@ const todos = await apiService.get<Todo[]>("/api/todos");
 Every request/response shape the backend owns comes from `@gaia/shared/api/generated` (`@shared/api/generated` under the web path alias):
 
 ```ts
-import type { Schema } from "@shared/api/generated";
+import type { TodoListResponse, TodoResponse } from "@shared/api/generated";
 
-type Todo = Schema<"TodoResponse">;
-const todos = await apiService.get<Schema<"TodoListResponse">>("/api/v1/todos");
+const todos: TodoListResponse = await api.get("/api/v1/todos");
 ```
 
-- `Schema<"Name">` is the Pydantic model `Name`; `paths`/`operations` carry the per-route request and response types; `ApiErrorBody` is the one error envelope (`{ message, code?, ... }` — narrow it with `getErrorMessage` / `getErrorCode` from `@/lib/api/errors`).
-- Never declare an `interface`/`type` that mirrors a Pydantic model. `checks.mjs api-schema-types` (the CI `api-schema` lane) fails the file and names the `Schema<'Name'>` to use instead. A feature's type hub may re-export a generated type under its own name (`export type Workflow = Schema<"WorkflowWithIntegrations">`); a client-side view model that genuinely differs gets a name that is not a schema name (`TriggerConfigDraft`, `AttachedFileData`).
+- Every Pydantic model is exported under its own name (`TodoResponse` is the class `TodoResponse`; a model used both as a request and a response comes as `WorkflowStepInput` / `WorkflowStepOutput`); `paths`/`operations` carry the per-route request and response types; `ErrorEnvelope` is the one error envelope (`{ message, code?, ... }` — narrow it with `getErrorMessage` / `getErrorCode` from `@/lib/api/errors`).
+- Never declare an `interface`/`type` that mirrors a Pydantic model. `checks.mjs api-schema-types` (the CI `api-schema` lane) fails the file and names the generated type to import instead. A feature's type hub may re-export a generated type (`export type { TodoResponse } from "@shared/api/generated"`) or name it for its consumers (`export type Workflow = WorkflowWithIntegrations`); a client-side view model that genuinely differs gets a name that is not a schema name (`TriggerConfigDraft`, `AttachedFileData`).
 - Changed a route or model? Run `mise api:types` (the prek hook does it for you on commit) and commit `apps/api/openapi.json` + `libs/shared/ts/src/api/generated/schema.d.ts`. CI regenerates and fails on drift.
 - Generator traps: `dict[str, Any]` → `Record<string, unknown>` and `Any` → `unknown`; `datetime` → `string`; `X | None` → `X | null` on a required key, not an optional key; a `StrEnum` → a string-literal union (keep a `const` map when you need runtime values). A Pydantic field with a default becomes an optional key (`memories?:`) unless the model extends `ResponseModel` (`apps/api/app/schemas/common.py`) — fix that on the API side rather than guarding `undefined` in every consumer.
 

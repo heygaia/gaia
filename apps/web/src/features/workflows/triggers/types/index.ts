@@ -8,7 +8,9 @@
  */
 
 // Base types and interfaces
-import type { Schema } from "@shared/api/generated";
+import type { TriggerConfig } from "@shared/api/generated";
+
+export type { TriggerConfig } from "@shared/api/generated";
 
 export type { TriggerSchema } from "./base";
 
@@ -26,7 +28,7 @@ export type { TriggerSchema } from "./base";
  * - Backend as source of truth for validation
  * - Spreading/merging config objects freely
  */
-export type TriggerConfig = Schema<"TriggerConfig">;
+
 /**
  * The editor's in-progress trigger config. `trigger_data` is the provider's
  * fields with `trigger_name` still a plain slug string — the discriminated

@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { WorkflowCreator } from "@shared/api/generated";
 /**
  * Shared types between workflows and use-cases
  */
@@ -6,4 +6,4 @@ import type { Schema } from "@shared/api/generated";
 /**
  * Creator/Author information for community content
  */
-export type ContentCreator = Schema<"WorkflowCreator">;
+export type ContentCreator = WorkflowCreator;

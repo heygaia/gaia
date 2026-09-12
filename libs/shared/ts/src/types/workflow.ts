@@ -1,5 +1,14 @@
-import type { Schema } from "../api/generated";
-export type TriggerConfig = Schema<"TriggerConfig">;
+import type {
+  TriggerConfig,
+  WorkflowStepOutput,
+  WorkflowWithIntegrations,
+} from "../api/generated";
+
+export type {
+  TriggerConfig,
+  WorkflowListResponse,
+  WorkflowResponse,
+} from "../api/generated";
 
 export interface ExecutionConfig {
   method: "chat" | "background" | "hybrid";
@@ -29,9 +38,9 @@ export interface ContentCreator {
   avatar?: string;
 }
 
-export type WorkflowStep = Schema<"WorkflowStep-Output">;
+export type WorkflowStep = WorkflowStepOutput;
 
-export type Workflow = Schema<"WorkflowWithIntegrations">;
+export type Workflow = WorkflowWithIntegrations;
 
 export interface CommunityWorkflow {
   id: string;
@@ -44,10 +53,6 @@ export interface CommunityWorkflow {
   categories?: string[];
   total_executions?: number;
 }
-
-export type WorkflowListResponse = Schema<"WorkflowListResponse">;
-
-export type WorkflowResponse = Schema<"WorkflowResponse">;
 
 export interface CreateWorkflowPayload {
   title: string;

@@ -1,5 +1,11 @@
 // Thin HTTP client for the device-bridge REST endpoints.
 
+import type {
+  DeviceTokenResponse,
+  PollPairingResponse,
+  StartPairingResponse,
+} from "@gaia/shared/api/generated";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -8,27 +14,6 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
-}
-
-export interface BridgeStartPairingResponse {
-  device_code: string;
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
-  interval: number;
-}
-
-export interface BridgePollPairingResponse {
-  status: "pending" | "approved" | "denied" | "expired";
-  device_id: string | null;
-  refresh_token: string | null;
-}
-
-export interface DeviceTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  refresh_token: string;
 }
 
 async function post<T>(
@@ -63,7 +48,7 @@ export function startPairing(
   name: string,
   platform: string,
   daemonVersion: string,
-): Promise<BridgeStartPairingResponse> {
+): Promise<StartPairingResponse> {
   return post(apiUrl, "/device/pair/start", {
     name,
     platform,
@@ -74,7 +59,7 @@ export function startPairing(
 export function pollPairing(
   apiUrl: string,
   deviceCode: string,
-): Promise<BridgePollPairingResponse> {
+): Promise<PollPairingResponse> {
   return post(apiUrl, "/device/pair/poll", { device_code: deviceCode });
 }
 

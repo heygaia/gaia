@@ -1,4 +1,8 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  CalendarEventsResponse,
+  EventDeleteRequest,
+  EventUpdateRequest,
+} from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 import type {
   CalendarEventsResult,
@@ -12,7 +16,7 @@ import {
 
 /** The API's event page with the passthrough events narrowed to Google's shape. */
 const toEventsResult = (
-  page: Schema<"CalendarEventsResponse">,
+  page: CalendarEventsResponse,
 ): CalendarEventsResult => ({
   ...page,
   events: asGoogleCalendarEvents(page.events),
@@ -95,7 +99,7 @@ export const calendarApi = {
 
   // Delete event via agent tool (unified endpoint)
   deleteEventByAgent: (
-    deletePayload: Schema<"EventDeleteRequest">,
+    deletePayload: EventDeleteRequest,
     options?: { silent?: boolean },
   ) =>
     api.delete("/api/v1/calendar/event", {
@@ -107,7 +111,7 @@ export const calendarApi = {
     }),
 
   // Update event via agent tool (unified endpoint)
-  updateEventByAgent: async (updatePayload: Schema<"EventUpdateRequest">) =>
+  updateEventByAgent: async (updatePayload: EventUpdateRequest) =>
     asGoogleCalendarEvent(
       await api.put("/api/v1/calendar/event", {
         body: updatePayload,

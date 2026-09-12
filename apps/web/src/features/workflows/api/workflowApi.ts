@@ -3,7 +3,7 @@
  * Provides functions to interact with the workflow backend API.
  */
 
-import type { Schema } from "@shared/api/generated";
+import type { GenerateWorkflowPromptRequest } from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 import type {
   CommunityWorkflow,
@@ -173,7 +173,7 @@ export const workflowApi = {
     }),
 
   // Generate or improve workflow instructions using AI
-  generatePrompt: (params: Schema<"GenerateWorkflowPromptRequest">) =>
+  generatePrompt: (params: GenerateWorkflowPromptRequest) =>
     api.post("/api/v1/workflows/generate-prompt", {
       body: params,
       silent: true,

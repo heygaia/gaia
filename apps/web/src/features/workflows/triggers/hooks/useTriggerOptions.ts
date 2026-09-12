@@ -4,15 +4,16 @@
  * Fetches dynamic options for trigger configuration fields (e.g., channels, boards).
  */
 
-import type { Schema } from "@shared/api/generated";
+import type { TriggerOption, TriggerOptionGroup } from "@shared/api/generated";
+
+export type { TriggerOption } from "@shared/api/generated";
+
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
 
 import { workflowApi } from "@/features/workflows/api/workflowApi";
 
-export type TriggerOption = Schema<"TriggerOption">;
-
 /** One entry of `/triggers/options`: a flat option, or a labelled group of them. */
-export type TriggerOptionEntry = TriggerOption | Schema<"TriggerOptionGroup">;
+export type TriggerOptionEntry = TriggerOption | TriggerOptionGroup;
 
 /** Narrows an entry to a flat option; handlers that only know flat lists drop groups. */
 export const isTriggerOption = (

@@ -1,8 +1,9 @@
-import type { Schema } from "../api/generated";
+import type { ImageData } from "../api/generated";
+
+export type { ImageData } from "../api/generated";
+
 import { NEW_MESSAGE_BREAK_TOKEN } from "../utils/messageBreakUtils";
 import { upsertApprovalToolData } from "./approvals";
-
-type ImageData = Schema<"ImageData">;
 
 import type {
   ChatStreamEvent,

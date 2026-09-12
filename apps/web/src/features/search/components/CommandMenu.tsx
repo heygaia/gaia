@@ -2,7 +2,7 @@
 
 import { Kbd } from "@heroui/kbd";
 import { MessageMultiple02Icon, SearchIcon } from "@icons";
-import type { Schema } from "@shared/api/generated";
+import type { SearchResultsResponse } from "@shared/api/generated";
 import { Command } from "cmdk";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -44,7 +44,7 @@ function ConversationResults({
   conversations,
   onOpen,
 }: Readonly<{
-  conversations: Schema<"SearchResultsResponse">["conversations"];
+  conversations: SearchResultsResponse["conversations"];
   onOpen: (conversationId: string) => void;
 }>) {
   if (conversations.length === 0) return null;
@@ -83,7 +83,7 @@ function MessageResults({
   messages,
   onOpen,
 }: Readonly<{
-  messages: Schema<"SearchResultsResponse">["messages"];
+  messages: SearchResultsResponse["messages"];
   onOpen: (conversationId: string) => void;
 }>) {
   if (messages.length === 0) return null;
@@ -173,9 +173,7 @@ export default function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<
-    Schema<"SearchResultsResponse">
-  >({
+  const [searchResults, setSearchResults] = useState<SearchResultsResponse>({
     conversations: [],
     messages: [],
     notes: [],

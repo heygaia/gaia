@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { VoiceTokenResponse } from "@shared/api/generated";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -36,7 +36,7 @@ const ONE_MINUTE_IN_MILLISECONDS = 60 * 1000;
 const CONNECTION_DETAILS_STALE_TIME_MS = 2 * 60 * 1000;
 
 /** Response of GET /token. */
-export type ConnectionDetails = Schema<"VoiceTokenResponse">;
+export type ConnectionDetails = VoiceTokenResponse;
 
 const fetchDetails = async (
   conversationId?: string,

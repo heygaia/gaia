@@ -696,6 +696,12 @@ function regenerateApiSchema() {
       // A field with a default is optional on the wire for a request body; a
       // response-only model marks it required itself (ResponseModel).
       "--default-non-nullable=false",
+      // One exported alias per component schema, under the API's own name
+      // (`TodoResponse`, not `Schema<"TodoResponse">`): navigable, greppable,
+      // and identical to the Pydantic class it came from.
+      "--root-types",
+      "--root-types-no-schema-prefix",
+      "--root-types-keep-casing",
       "--output",
       GENERATED_TYPES,
     ],
@@ -730,11 +736,28 @@ const GENERATED_DIR = "libs/shared/ts/src/api/generated/";
 // `type Foo,` line of a multi-line `import type` list.
 const TYPE_DECLARATION =
   /^\s*(?:export\s+)?(?:declare\s+)?(?:interface|type)\s+([A-Za-z0-9_]+)\s*(?:<|\{|=|extends\b)/gm;
-// `export type Workflow = Schema<"WorkflowWithIntegrations">;` names a
-// generated type for a feature's consumers — zero fields of its own, so it
-// cannot drift. Anything else with the name is a twin.
-const SCHEMA_ALIAS = (name) =>
-  new RegExp(`^\\s*(?:export\\s+)?type\\s+${name}\\s*=\\s*Schema<["'][A-Za-z0-9_]+["']>;`, "m");
+// `export type Workflow = WorkflowWithIntegrations;` names a generated type
+// for a feature's consumers — zero fields of its own, so it cannot drift.
+// Anything else with the name is a twin. The right-hand side is a schema
+// name, or a local name bound to one by `import type { X as Y }` (the form a
+// type-plus-`const` pair like `Priority` needs).
+const GENERATED_IMPORT = /^import type \{([^}]*)\} from "[^"]*generated";/gm;
+function generatedBindings(src, names) {
+  const bound = new Set();
+  for (const [, list] of src.matchAll(GENERATED_IMPORT)) {
+    for (const entry of list.split(",")) {
+      const [imported, local = imported] = entry.trim().split(/\s+as\s+/);
+      if (names.has(imported)) bound.add(local);
+    }
+  }
+  return bound;
+}
+const schemaAliasIn = (src, name, names) => {
+  const alias = src.match(
+    new RegExp(`^\\s*(?:export\\s+)?type\\s+${name}\\s*=\\s*([A-Za-z0-9_]+);`, "m"),
+  );
+  return alias !== null && (names.has(alias[1]) || generatedBindings(src, names).has(alias[1]));
+};
 
 function schemaComponentNames() {
   const doc = JSON.parse(readFileSync(OPENAPI_JSON, "utf8"));
@@ -745,7 +768,7 @@ function schemaTwinsIn(file, names) {
   const src = readFileSync(file, "utf8");
   return [...src.matchAll(TYPE_DECLARATION)]
     .map((m) => m[1])
-    .filter((name) => names.has(name) && !SCHEMA_ALIAS(name).test(src));
+    .filter((name) => names.has(name) && !schemaAliasIn(src, name, names));
 }
 
 // The web's API layer. `apiService` is the untyped request engine behind the
@@ -796,7 +819,7 @@ function cmdApiSchemaTypes(argv) {
     for (const v of violations) {
       for (const name of v.names) {
         console.log(
-          `  ${v.file}: ${name} — import { Schema } from "@gaia/shared/api/generated" and use Schema<'${name}'>`,
+          `  ${v.file}: ${name} — import type { ${name} } from "@gaia/shared/api/generated"`,
         );
       }
     }

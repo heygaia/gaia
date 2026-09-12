@@ -1,4 +1,11 @@
-import type { Schema } from "../api/generated";
+import type { ActivityDay } from "../api/generated";
+
+export type {
+  ActivityDay,
+  BudgetWindow,
+  UsageBudget,
+  UsageSummary,
+} from "../api/generated";
 export interface UsagePeriod {
   used: number;
   limit: number;
@@ -21,11 +28,6 @@ export interface FeatureUsage {
 
 /** One cost-budget window: only how much of the allowance is used (0-100) and
  * when it resets. The backend never sends raw USD spend — see cost_budget.py. */
-export type BudgetWindow = Schema<"BudgetWindow">;
-
-export type UsageBudget = Schema<"UsageBudget">;
-
-export type ActivityDay = Schema<"ActivityDay">;
 
 /** Year activity heatmap + the user's standing. Served by /usage/activity,
  * backed by the daily-rollup collection (see usage_daily). */
@@ -41,5 +43,3 @@ export interface UsageActivity {
   /** Badge tier from the percentile, or null when unranked. */
   tier: "diamond" | "gold" | "silver" | "bronze" | null;
 }
-
-export type UsageSummary = Schema<"UsageSummary">;

@@ -1,8 +1,9 @@
-import type { Schema } from "@shared/api/generated";
+import type { UsageHistoryEntry } from "@shared/api/generated";
+
+export type { UsageHistoryEntry } from "@shared/api/generated";
+
 import type { UsageActivity, UsageSummary } from "@shared/types";
 import { apiauth } from "@/lib/api/client";
-
-export type UsageHistoryEntry = Schema<"UsageHistoryEntry">;
 
 class UsageApiService {
   async getUsageSummary(): Promise<UsageSummary> {

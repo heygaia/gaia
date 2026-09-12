@@ -1,6 +1,6 @@
-import type { Schema } from "../api/generated";
+import type { TriggerConfig } from "../api/generated";
 
-type TriggerConfig = Schema<"TriggerConfig">;
+export type { TriggerConfig } from "../api/generated";
 
 /**
  * Framework-agnostic trigger helpers shared between web and mobile.

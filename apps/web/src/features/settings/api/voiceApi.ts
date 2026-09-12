@@ -1,9 +1,6 @@
-import type { Schema } from "@shared/api/generated";
+export type { VoiceListResponse, VoiceOption } from "@shared/api/generated";
+
 import { api } from "@/lib/api/typed";
-
-export type VoiceOption = Schema<"VoiceOption">;
-
-export type VoiceListResponse = Schema<"VoiceListResponse">;
 
 export const voiceApi = {
   getVoices: () =>

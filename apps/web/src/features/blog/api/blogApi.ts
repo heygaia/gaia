@@ -1,7 +1,8 @@
-import type { Schema } from "@shared/api/generated";
-import { api } from "@/lib/api/client";
+import type { BlogPost } from "@shared/api/generated";
 
-export type BlogPost = Schema<"BlogPost">;
+export type { BlogPost } from "@shared/api/generated";
+
+import { api } from "@/lib/api/client";
 
 export const blogApi = {
   getBlogs: async (includeContent: boolean = false): Promise<BlogPost[]> => {

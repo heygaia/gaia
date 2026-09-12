@@ -1,5 +1,6 @@
-import type { Schema } from "@shared/api/generated";
-export type DesktopReleaseAsset = Schema<"DesktopReleaseAsset">;
+import type { DesktopReleaseAsset } from "@shared/api/generated";
+
+export type { DesktopReleaseAsset } from "@shared/api/generated";
 
 export interface DesktopRelease {
   tag: string;

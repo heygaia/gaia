@@ -1,4 +1,19 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  NotificationActionView,
+  NotificationContent,
+  NotificationView,
+} from "@shared/api/generated";
+
+export type {
+  ApiCallConfig,
+  BulkActionRequest,
+  ModalConfig,
+  NotificationContent,
+  NotificationView,
+  PaginatedNotificationsResponse,
+  RedirectConfig,
+} from "@shared/api/generated";
+
 import type { NotificationStatus as SharedNotificationStatus } from "@shared/types";
 
 export enum NotificationType {
@@ -14,10 +29,6 @@ export {
   NotificationActionType as ActionType,
   NotificationStatus,
 } from "@shared/types";
-
-export type RedirectConfig = Schema<"RedirectConfig">;
-
-export type ApiCallConfig = Schema<"ApiCallConfig">;
 
 export interface ModalProps {
   // Base modal props
@@ -72,11 +83,7 @@ export interface ModalProps {
   };
 }
 
-export type ModalConfig = Schema<"ModalConfig">;
-
-export type NotificationAction = Schema<"NotificationActionView">;
-
-export type NotificationContent = Schema<"NotificationContent">;
+export type NotificationAction = NotificationActionView;
 
 export interface NotificationMetadata {
   // Source tracking
@@ -120,8 +127,6 @@ export interface NotificationMetadata {
   // Allow for additional custom fields
   [key: string]: string | number | boolean | string[] | object | undefined;
 }
-
-export type NotificationView = Schema<"NotificationView">;
 
 export interface ActionResultData {
   // Entity results
@@ -220,16 +225,11 @@ export interface SendNotificationData {
 
 // API Request/Response types
 
-export type BulkActionRequest = Schema<"BulkActionRequest">;
-
 export interface NotificationResponse {
   success: boolean;
   message: string;
   data?: ActionResultData | NotificationView; // Allow both types
 }
-
-export type PaginatedNotificationsResponse =
-  Schema<"PaginatedNotificationsResponse">;
 
 // Hook options
 export interface UseNotificationsOptions {

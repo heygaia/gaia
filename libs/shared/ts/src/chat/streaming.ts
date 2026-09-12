@@ -1,4 +1,4 @@
-import type { Schema } from "../api/generated";
+import type { ToolDataEntry } from "../api/generated";
 import {
   DESKTOP_TOOL_DEFAULT_TIMEOUT_MS,
   type DesktopToolRequest,
@@ -8,7 +8,7 @@ import type { TodoProgressSnapshot } from "./types";
 
 export type { TodoProgressSnapshot };
 
-export type StreamToolDataEntry = Schema<"ToolDataEntry">;
+export type StreamToolDataEntry = ToolDataEntry;
 
 /**
  * tool_name marking a streamed tool-call-progress entry. These render via the

@@ -1,10 +1,9 @@
-import type { Schema } from "@gaia/shared/api/generated";
+import type { ToolInfo, ToolsListResponse } from "@gaia/shared/api/generated";
+
+export type { ToolInfo, ToolsListResponse } from "@gaia/shared/api/generated";
+
 import { useQuery } from "@tanstack/react-query";
 import { apiService } from "@/lib/api";
-
-export type ToolInfo = Schema<"ToolInfo">;
-
-export type ToolsListResponse = Schema<"ToolsListResponse">;
 
 const TOOLS_LIST_QUERY_KEY = ["tools", "list"] as const;
 const TOOLS_LIST_STALE_TIME_MS = 60 * 1000;

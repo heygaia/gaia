@@ -10,7 +10,20 @@
  * DO NOT create duplicate type definitions elsewhere!
  */
 
-import type { Schema } from "@shared/api/generated";
+import type {
+  PublicWorkflowCard,
+  PublicWorkflowStep,
+  SelectedWorkflowDataOutput,
+  WorkflowWithIntegrations,
+} from "@shared/api/generated";
+
+export type {
+  CreateWorkflowRequest,
+  IntegrationRef,
+  PublicWorkflowStep,
+  WorkflowExecutionRequest,
+} from "@shared/api/generated";
+
 import type {
   TriggerConfig,
   TriggerConfigDraft,
@@ -26,7 +39,6 @@ import type { ContentCreator } from "@/types/shared/contentTypes";
  * Used in CommunityWorkflow and UseCase types
  * Note: Backend actually returns full WorkflowStepType, but we type it as optional for flexibility
  */
-export type PublicWorkflowStep = Schema<"PublicWorkflowStep">;
 
 // ============================================================================
 // WORKFLOW CONFIGURATION TYPES
@@ -44,7 +56,7 @@ export type { TriggerConfig, TriggerConfigDraft };
  * Community workflow - publicly shared workflow
  * Also used for Explore workflows (featured workflows on landing/workflows pages)
  */
-export type CommunityWorkflow = Schema<"PublicWorkflowCard">;
+export type CommunityWorkflow = PublicWorkflowCard;
 
 // ============================================================================
 // USE CASE TYPES (Landing Page Content & Templates)
@@ -83,15 +95,11 @@ export interface UseCase {
 /**
  * Legacy workflow data (for message components)
  */
-export type WorkflowData = Schema<"SelectedWorkflowData-Output">;
+export type WorkflowData = SelectedWorkflowDataOutput;
 
 /** Lightweight integration reference returned in workflow responses. */
-export type IntegrationRef = Schema<"IntegrationRef">;
 
 // Complete workflow entity
-export type Workflow = Schema<"WorkflowWithIntegrations">;
+export type Workflow = WorkflowWithIntegrations;
 
 // API request types
-export type CreateWorkflowRequest = Schema<"CreateWorkflowRequest">;
-
-export type WorkflowExecutionRequest = Schema<"WorkflowExecutionRequest">;

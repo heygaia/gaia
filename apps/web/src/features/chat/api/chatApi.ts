@@ -2,7 +2,16 @@ import {
   type EventSourceMessage,
   fetchEventSource,
 } from "@microsoft/fetch-event-source";
-import type { Schema } from "@shared/api/generated";
+import type {
+  ConversationSummary,
+  ConversationSyncItem,
+  ConversationSyncRow,
+  MessageModelOutput,
+  SystemPurpose as SystemPurposeLiteral,
+} from "@shared/api/generated";
+
+export type { ConversationSyncItem } from "@shared/api/generated";
+
 import type {
   ApprovalDecisionPayload,
   BatchApprovalDecisionPayload,
@@ -91,7 +100,8 @@ export interface ChatStreamRequest {
 }
 
 /** The API's enum; the members are the ones the web reads by name. */
-export type SystemPurpose = Schema<"SystemPurpose">;
+
+export type SystemPurpose = SystemPurposeLiteral;
 
 export const SystemPurpose = {
   EMAIL_PROCESSING: "email_processing",
@@ -99,9 +109,9 @@ export const SystemPurpose = {
   /** The seeded Getting-started thread: the user's first screen after onboarding. */
   GETTING_STARTED: "getting_started",
   OTHER: "other",
-} as const satisfies Record<string, SystemPurpose>;
+} as const satisfies Record<string, SystemPurposeLiteral>;
 
-export type Conversation = Schema<"ConversationSummary">;
+export type Conversation = ConversationSummary;
 
 /**
  * The stored message as the chat UI holds it. The client message adds its
@@ -109,12 +119,10 @@ export type Conversation = Schema<"ConversationSummary">;
  * fields as optional; this is the one place that conversion is stated.
  */
 export const toClientMessages = (
-  messages: Schema<"MessageModel-Output">[],
+  messages: MessageModelOutput[],
 ): MessageType[] => messages as unknown as MessageType[];
 
-export type ConversationSyncItem = Schema<"ConversationSyncItem">;
-
-export type SyncedConversation = Schema<"ConversationSyncRow">;
+export type SyncedConversation = ConversationSyncRow;
 
 export const chatApi = {
   // Fetch conversations with pagination

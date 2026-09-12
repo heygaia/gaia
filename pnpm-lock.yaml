@@ -1310,6 +1310,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.5.7
         version: 2.5.7
+      '@gaia/shared':
+        specifier: workspace:*
+        version: link:../../libs/shared/ts
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3

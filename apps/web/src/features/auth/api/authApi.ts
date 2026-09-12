@@ -1,11 +1,16 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  AuthenticatedUserResponse,
+  OnboardingPreferences,
+  OnboardingRequest,
+  OnboardingStatusResponse,
+} from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 
 /** The onboarding block as `GET /user/me` and the onboarding endpoints return it. */
-export type OnboardingData = Schema<"OnboardingStatusResponse">;
+export type OnboardingData = OnboardingStatusResponse;
 
 /** `GET /user/me`. */
-export type UserInfo = Schema<"AuthenticatedUserResponse">;
+export type UserInfo = AuthenticatedUserResponse;
 
 export const authApi = {
   // Fetch current user info
@@ -51,11 +56,11 @@ export const authApi = {
   },
 
   // Complete onboarding
-  completeOnboarding: (onboardingData: Schema<"OnboardingRequest">) =>
+  completeOnboarding: (onboardingData: OnboardingRequest) =>
     api.post("/api/v1/onboarding", { body: onboardingData, silent: true }),
 
   // Update user preferences (renamed for clarity)
-  updateOnboardingPreferences: (preferences: Schema<"OnboardingPreferences">) =>
+  updateOnboardingPreferences: (preferences: OnboardingPreferences) =>
     api.patch("/api/v1/onboarding/preferences", {
       body: preferences,
       silent: true,

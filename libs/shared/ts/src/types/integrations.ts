@@ -8,7 +8,18 @@
  * Integration category values - synced with backend INTEGRATION_CATEGORIES
  * (apps/api/app/services/integrations/category_inference_service.py)
  */
-import type { Schema } from "../api/generated";
+import type {
+  CommunityIntegrationCreator,
+  IntegrationTool,
+} from "../api/generated";
+
+export type {
+  CreateCustomIntegrationRequest,
+  IntegrationTool,
+  IntegrationToolsResponse,
+  MyIntegrationItem,
+  MyIntegrationsResponse,
+} from "../api/generated";
 
 export type IntegrationCategory =
   | "productivity"
@@ -53,9 +64,7 @@ export type IntegrationAuthType = "oauth" | "bearer" | "none";
 
 export type IntegrationManagedBy = "composio" | "mcp" | "internal" | "self";
 
-export type IntegrationTool = Schema<"IntegrationTool">;
-
-export type IntegrationCreator = Schema<"CommunityIntegrationCreator">;
+export type IntegrationCreator = CommunityIntegrationCreator;
 
 export interface Integration {
   id: string;
@@ -158,20 +167,17 @@ export interface IntegrationStatusRecord {
  * `MyIntegrationItem`. Fetch full tools on demand from
  * `GET /integrations/{id}/tools` (`IntegrationToolsResponse`).
  */
-export type MyIntegrationItem = Schema<"MyIntegrationItem">;
 
 /**
  * The full integration catalog personalized for one user (platform + their own
  * custom integrations), each carrying connection status. Replaces the
  * client-side merge of /config + /status + /users/me/integrations.
  */
-export type MyIntegrationsResponse = Schema<"MyIntegrationsResponse">;
 
 /**
  * Full tool list for a single integration, fetched on demand from
  * `GET /integrations/{id}/tools`. Mirrors the backend `IntegrationToolsResponse`.
  */
-export type IntegrationToolsResponse = Schema<"IntegrationToolsResponse">;
 
 export interface CommunityIntegrationsResponse {
   integrations: CommunityIntegration[];
@@ -195,6 +201,3 @@ export interface PublicIntegrationResponse extends CommunityIntegration {
   } | null;
   authType?: IntegrationAuthType | null;
 }
-
-export type CreateCustomIntegrationRequest =
-  Schema<"CreateCustomIntegrationRequest">;

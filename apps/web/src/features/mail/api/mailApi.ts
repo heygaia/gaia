@@ -1,4 +1,7 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  BulkEmailImportanceSummariesResponse,
+  EmailRequest,
+} from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 import type { EmailActionResponse } from "@/types/api/mailApiTypes";
 import {
@@ -199,7 +202,7 @@ export const mailApi = {
     }),
 
   // AI compose email
-  composeWithAI: (params: Schema<"EmailRequest">) =>
+  composeWithAI: (params: EmailRequest) =>
     api.post("/api/v1/mail/ai/compose", {
       body: params,
       errorMessage: "Failed to compose email with AI",
@@ -220,7 +223,7 @@ export const mailApi = {
   fetchEmailSummaryByIds: async (
     messageIds: string[],
   ): Promise<
-    Omit<Schema<"BulkEmailImportanceSummariesResponse">, "emails"> & {
+    Omit<BulkEmailImportanceSummariesResponse, "emails"> & {
       emails: Record<string, EmailImportanceSummary>;
     }
   > => {

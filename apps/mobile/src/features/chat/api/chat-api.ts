@@ -1,4 +1,7 @@
-import type { Schema } from "@gaia/shared/api/generated";
+import type { ImageData, ReplyToMessageData } from "@gaia/shared/api/generated";
+
+export type { ImageData, ReplyToMessageData } from "@gaia/shared/api/generated";
+
 import type { ApprovalDecisionPayload, ToolDataEntry } from "@gaia/shared/chat";
 import { getAuthToken } from "@/features/auth/utils/auth-storage";
 import { ApiError, apiService } from "@/lib/api";
@@ -54,13 +57,9 @@ export interface ApiConversationDetail {
   updatedAt?: string;
 }
 
-export type ImageData = Schema<"ImageData">;
-
 export interface MemoryData {
   [key: string]: unknown;
 }
-
-export type ReplyToMessageData = Schema<"ReplyToMessageData">;
 
 export interface Message {
   id: string;

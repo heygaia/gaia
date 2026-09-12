@@ -1,10 +1,13 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  PersonalizationResponse,
+  PublicHoloCardResponse,
+} from "@shared/api/generated";
 import { api } from "@/lib/api/client";
 import { api as typedApi } from "@/lib/api/typed";
 
-export type HoloCardData = Schema<"PersonalizationResponse">;
+export type HoloCardData = PersonalizationResponse;
 
-export type PublicHoloCardData = Schema<"PublicHoloCardResponse">;
+export type PublicHoloCardData = PublicHoloCardResponse;
 
 export const holoCardApi = {
   // Get current user's holo card data (authenticated) - includes workflows

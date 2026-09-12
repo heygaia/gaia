@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { GmailMessageSummary } from "@shared/api/generated";
 
 /**
  * The API forwards each Gmail message with its raw keys alongside the derived
@@ -6,7 +6,7 @@ import type { Schema } from "@shared/api/generated";
  * own schema, which this interface describes. The one place that says so.
  */
 export const asEmailData = (
-  messages: Schema<"GmailMessageSummary">[] | Record<string, unknown>[],
+  messages: GmailMessageSummary[] | Record<string, unknown>[],
 ): EmailData[] => messages as unknown as EmailData[];
 
 export interface EmailData {

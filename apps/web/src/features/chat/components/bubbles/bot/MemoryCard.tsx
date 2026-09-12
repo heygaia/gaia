@@ -12,7 +12,7 @@ import {
   Folder01Icon,
   Search01Icon,
 } from "@icons";
-import type { Schema } from "@shared/api/generated";
+import type { MemoryEntry } from "@shared/api/generated";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import type { MemoryData } from "@/config/registries/toolRegistry";
@@ -55,7 +55,7 @@ function relativeDate(iso: string | null | undefined): string | null {
   }
 }
 
-function memoryRowKey(memory: Schema<"MemoryEntry">): string {
+function memoryRowKey(memory: MemoryEntry): string {
   // Stable React key: prefer the DB id, fall back to a natural composite of
   // the fields that identify a displayed row.
   return `${memory.id ?? memory.category_path}:${memory.version}:${memory.content}`;
@@ -63,7 +63,7 @@ function memoryRowKey(memory: Schema<"MemoryEntry">): string {
 
 // ─── sub-components ─────────────────────────────────────────────────────────
 
-function MemoryRow({ memory }: Readonly<{ memory: Schema<"MemoryEntry"> }>) {
+function MemoryRow({ memory }: Readonly<{ memory: MemoryEntry }>) {
   const ts = memory.updated_at ?? memory.created_at ?? memory.mentioned_at;
   const rel = relativeDate(ts);
   return (

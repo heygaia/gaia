@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { MemoryDocType } from "@shared/api/generated";
 import type { GraphThemeColors } from "@supermemory/memory-graph";
 
 export const MEMORY_PAGE_SIZE = 20;
@@ -8,7 +8,7 @@ export const MAX_MEMORY_LENGTH = 500;
 export const JOURNAL_RANGE_DAYS = 14;
 
 export const CORE_DOCUMENTS: {
-  docType: Schema<"MemoryDocType">;
+  docType: MemoryDocType;
   fileName: string;
   description: string;
 }[] = [

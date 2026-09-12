@@ -1,4 +1,8 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  MemoryDocument,
+  MemoryEntry,
+  MemoryEpisode,
+} from "@shared/api/generated";
 import type {
   ApprovalRequestData,
   RateLimitData as SharedRateLimitData,
@@ -56,7 +60,7 @@ import type { WeatherData } from "@/types/features/weatherTypes";
 export type MemoryData =
   | {
       action: "add";
-      memories: Schema<"MemoryEntry">[];
+      memories: MemoryEntry[];
       folder: string;
       outcome: "new" | "updated" | "extended" | "duplicate";
       message: string;
@@ -65,12 +69,12 @@ export type MemoryData =
       action: "search";
       query: string;
       folder: string | null;
-      memories: Schema<"MemoryEntry">[];
+      memories: MemoryEntry[];
       message: string;
     }
   | {
       action: "update";
-      memories: Schema<"MemoryEntry">[];
+      memories: MemoryEntry[];
       message: string;
     }
   | {
@@ -82,12 +86,12 @@ export type MemoryData =
   | {
       action: "journal";
       query: string | null;
-      episodes: Schema<"MemoryEpisode">[];
+      episodes: MemoryEpisode[];
       message: string;
     }
   | {
       action: "document";
-      document: Schema<"MemoryDocument">;
+      document: MemoryDocument;
       updated: boolean;
       message: string;
     };

@@ -1,4 +1,11 @@
-import type { Schema } from "@gaia/shared/api/generated";
+import type { WorkflowExecution } from "@gaia/shared/api/generated";
+
+export type {
+  WorkflowExecution,
+  WorkflowExecutionResponse,
+  WorkflowStatusResponse,
+} from "@gaia/shared/api/generated";
+
 import type { TriggerConfig, WorkflowStep } from "@gaia/shared/types";
 
 export type {
@@ -13,10 +20,6 @@ export type {
   WorkflowResponse,
   WorkflowStep,
 } from "@gaia/shared/types";
-
-export type WorkflowExecution = Schema<"WorkflowExecution">;
-export type WorkflowExecutionResponse = Schema<"WorkflowExecutionResponse">;
-export type WorkflowStatusResponse = Schema<"WorkflowStatusResponse">;
 
 export interface WorkflowExecutionsListResponse {
   executions: WorkflowExecution[];

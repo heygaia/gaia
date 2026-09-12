@@ -4,7 +4,9 @@
  * Each platform implements the actual HTTP calls using its own HTTP client.
  */
 
-import type { Schema } from "./generated";
+import type { ConversationSyncItem } from "./generated";
+
+export type { ConversationSyncItem } from "./generated";
 
 export const CONVERSATION_ENDPOINTS = {
   list: "/conversations",
@@ -30,8 +32,6 @@ export interface ConversationListParams {
   page?: number;
   limit?: number;
 }
-
-export type ConversationSyncItem = Schema<"ConversationSyncItem">;
 
 export interface BatchSyncConversationsParams {
   conversations: ConversationSyncItem[];

@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { IntegrationsConfigResponse } from "@shared/api/generated";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -105,8 +105,7 @@ async function getNativeIntegrationSlugs(): Promise<string[]> {
       next: { revalidate: 60 },
     });
     if (!response.ok) return [];
-    const data =
-      (await response.json()) as Schema<"IntegrationsConfigResponse">;
+    const data = (await response.json()) as IntegrationsConfigResponse;
     const slugs: string[] = [];
     for (const integration of data.integrations) {
       if (integration.id && integration.available !== false) {

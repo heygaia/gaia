@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { AddIntegrationResponse } from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 import { sanitizeRedirectUrl } from "@/lib/url-safety";
 
@@ -8,14 +8,8 @@ import type {
 } from "../types";
 
 /** `addIntegration`'s result: the API's answer plus the two client-side states. */
-export type AddIntegrationOutcome = Omit<
-  Schema<"AddIntegrationResponse">,
-  "status"
-> & {
-  status:
-    | Schema<"AddIntegrationResponse">["status"]
-    | "redirecting"
-    | "bearer_required";
+export type AddIntegrationOutcome = Omit<AddIntegrationResponse, "status"> & {
+  status: AddIntegrationResponse["status"] | "redirecting" | "bearer_required";
 };
 
 export const integrationsApi = {

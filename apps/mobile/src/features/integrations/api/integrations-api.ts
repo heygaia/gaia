@@ -2,7 +2,10 @@ import {
   INTEGRATION_STATE_ORDER,
   integrationConnectionState,
 } from "@gaia/shared";
-import type { Schema } from "@gaia/shared/api/generated";
+import type { CreateCustomIntegrationResponse } from "@gaia/shared/api/generated";
+
+export type { CreateCustomIntegrationResponse } from "@gaia/shared/api/generated";
+
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { apiService } from "@/lib/api";
@@ -176,9 +179,6 @@ export interface ConnectionTestResult {
   oauthUrl?: string;
   error?: string;
 }
-
-export type CreateCustomIntegrationResponse =
-  Schema<"CreateCustomIntegrationResponse">;
 
 export async function createCustomIntegration(
   data: CreateCustomIntegrationParams,

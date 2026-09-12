@@ -3,7 +3,7 @@
 import { Skeleton } from "@heroui/skeleton";
 import { Spinner } from "@heroui/spinner";
 import { Folder01Icon } from "@icons";
-import type { Schema } from "@shared/api/generated";
+import type { MemoryEntry, MemoryTreeNode } from "@shared/api/generated";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { ChevronRight } from "@/components/shared/icons";
@@ -18,7 +18,7 @@ interface MemoryTreeProps {
 }
 
 export function MemoryTree({ onChanged }: MemoryTreeProps) {
-  const [tree, setTree] = useState<Schema<"MemoryTreeNode">[]>([]);
+  const [tree, setTree] = useState<MemoryTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchTree = useCallback(async () => {
@@ -81,16 +81,14 @@ export function MemoryTree({ onChanged }: MemoryTreeProps) {
 }
 
 interface TreeFolderProps {
-  readonly node: Schema<"MemoryTreeNode">;
+  readonly node: MemoryTreeNode;
   readonly depth: number;
   readonly actions: ReturnType<typeof useMemoryActions>;
 }
 
 function TreeFolder({ node, depth, actions }: TreeFolderProps) {
   const [expanded, setExpanded] = useState(false);
-  const [memories, setMemories] = useState<Schema<"MemoryEntry">[] | null>(
-    node.memories,
-  );
+  const [memories, setMemories] = useState<MemoryEntry[] | null>(node.memories);
   const [loadingMemories, setLoadingMemories] = useState(false);
 
   // A tree refetch yields a new `node` — resync the lazily-loaded list so a
@@ -103,7 +101,7 @@ function TreeFolder({ node, depth, actions }: TreeFolderProps) {
   }
 
   const handleForget = useCallback(
-    async (target: Schema<"MemoryEntry">) => {
+    async (target: MemoryEntry) => {
       if (await actions.forgetMemory(target)) {
         setMemories(
           (previous) => previous?.filter((m) => m.id !== target.id) ?? null,

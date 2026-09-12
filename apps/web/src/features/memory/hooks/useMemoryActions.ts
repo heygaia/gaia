@@ -1,6 +1,6 @@
 "use client";
 
-import type { Schema } from "@shared/api/generated";
+import type { MemoryEntry } from "@shared/api/generated";
 import { useCallback, useState } from "react";
 import { memoryApi } from "@/features/memory/api/memoryApi";
 import { useConfirmation } from "@/hooks/useConfirmation";
@@ -11,13 +11,12 @@ import { toast } from "@/lib/toast";
  * Render the returned state with <EditMemoryModal> and <ConfirmationDialog>.
  */
 export function useMemoryActions(onChanged: () => void) {
-  const [editingMemory, setEditingMemory] =
-    useState<Schema<"MemoryEntry"> | null>(null);
+  const [editingMemory, setEditingMemory] = useState<MemoryEntry | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { confirm, confirmationProps } = useConfirmation();
 
   const forgetMemory = useCallback(
-    async (memory: Schema<"MemoryEntry">): Promise<boolean> => {
+    async (memory: MemoryEntry): Promise<boolean> => {
       if (!memory.id) return false;
 
       const confirmed = await confirm({

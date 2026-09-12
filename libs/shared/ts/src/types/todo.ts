@@ -1,14 +1,32 @@
-import type { Schema } from "../api/generated";
-export type Priority = Schema<"Priority">;
+import type {
+  Priority as PriorityLiteral,
+  SubTaskOutput,
+  TodoModel,
+  TodoResponse,
+  TodoUpdateRequest,
+} from "../api/generated";
+
+export type {
+  BulkMoveRequest,
+  PaginationMeta,
+  ProjectCreate,
+  SubscriptionCondition,
+  TodoCounts,
+  TodoListResponse,
+  TriggerSubscription,
+} from "../api/generated";
+
+export type Priority = PriorityLiteral;
+
 /** Runtime handles for the `Priority` literals (the enum this replaced). */
 export const Priority = {
   HIGH: "high",
   MEDIUM: "medium",
   LOW: "low",
   NONE: "none",
-} as const satisfies Record<string, Priority>;
+} as const satisfies Record<string, PriorityLiteral>;
 
-export type SubTask = Schema<"SubTask-Output">;
+export type SubTask = SubTaskOutput;
 
 export enum ConditionOperator {
   EQUALS = "equals",
@@ -47,18 +65,14 @@ export enum SubscriptionResolution {
   ACCOUNT = "account",
 }
 
-export type SubscriptionCondition = Schema<"SubscriptionCondition">;
+export type Todo = TodoResponse;
 
-export type TriggerSubscription = Schema<"TriggerSubscription">;
-
-export type Todo = Schema<"TodoResponse">;
-
-export type TodoUpdate = Schema<"TodoUpdateRequest">;
+export type TodoUpdate = TodoUpdateRequest;
 
 export interface TodoFilters {
   project_id?: string;
   completed?: boolean;
-  priority?: Priority;
+  priority?: PriorityLiteral;
   has_due_date?: boolean;
   overdue?: boolean;
   skip?: number;
@@ -84,10 +98,6 @@ export interface Project {
   updated_at: string;
 }
 
-export type PaginationMeta = Schema<"PaginationMeta">;
-
-export type TodoListResponse = Schema<"TodoListResponse">;
-
 export enum WorkflowStatus {
   NOT_STARTED = "not_started",
   GENERATING = "generating",
@@ -95,19 +105,13 @@ export enum WorkflowStatus {
   FAILED = "failed",
 }
 
-export type TodoCounts = Schema<"TodoCounts">;
-
-export type TodoCreate = Schema<"TodoModel">;
-
-export type ProjectCreate = Schema<"ProjectCreate">;
+export type TodoCreate = TodoModel;
 
 export interface ProjectUpdate {
   name?: string;
   description?: string;
   color?: string;
 }
-
-export type BulkMoveRequest = Schema<"BulkMoveRequest">;
 
 export interface TodoLabel {
   name: string;

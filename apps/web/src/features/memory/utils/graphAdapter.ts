@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { MemoryEntry, MemoryGraphResponse } from "@shared/api/generated";
 import type {
   GraphApiDocument,
   GraphApiMemory,
@@ -23,7 +23,7 @@ type RelationsByMemoryId = Map<string, Record<string, MemoryRelation>>;
  *   the component cannot draw document-to-document edges directly.
  */
 export function adaptGraphResponse(
-  response: Schema<"MemoryGraphResponse">,
+  response: MemoryGraphResponse,
 ): GraphApiDocument[] {
   const now = new Date().toISOString();
   const entityIds = new Set(response.nodes.map((node) => node.id));
@@ -63,7 +63,7 @@ export function adaptGraphResponse(
 }
 
 function collectRelations(
-  response: Schema<"MemoryGraphResponse">,
+  response: MemoryGraphResponse,
   entityIds: Set<string>,
 ): RelationsByMemoryId {
   const memoryIds = new Set(
@@ -109,7 +109,7 @@ function collectRelations(
 }
 
 function assignMemoriesToDocs(
-  memories: Schema<"MemoryEntry">[],
+  memories: MemoryEntry[],
   entityIds: Set<string>,
   relationsByMemoryId: RelationsByMemoryId,
   folderDocs: Map<string, GraphApiDocument>,
@@ -135,7 +135,7 @@ function assignMemoriesToDocs(
 
 function getOrCreateFolderDoc(
   folderDocs: Map<string, GraphApiDocument>,
-  memory: Schema<"MemoryEntry">,
+  memory: MemoryEntry,
   now: string,
 ): GraphApiDocument {
   const folder = memory.category_path.split("/")[0] || "";
@@ -157,7 +157,7 @@ function getOrCreateFolderDoc(
 }
 
 function buildEntitySummaries(
-  response: Schema<"MemoryGraphResponse">,
+  response: MemoryGraphResponse,
 ): Map<string, string> {
   const entityNamesById = new Map(
     response.nodes.map((node) => [node.id, node.name]),
@@ -185,7 +185,7 @@ function buildEntitySummaries(
 }
 
 function toGraphMemory(
-  memory: Schema<"MemoryEntry">,
+  memory: MemoryEntry,
   fallbackTimestamp: string,
   relationsByMemoryId: RelationsByMemoryId,
 ): GraphApiMemory {

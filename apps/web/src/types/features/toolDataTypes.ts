@@ -1,9 +1,9 @@
 // Tool data types for various AI-powered features
 
 // Define image data structure for image generation
-import type { Schema } from "@shared/api/generated";
+import type { ArtifactRegistryEntry } from "@shared/api/generated";
 
-export type ImageData = Schema<"ImageData">;
+export type { ImageData } from "@shared/api/generated";
 
 // Define memory data structure for memory operations
 export type MemoryData = {
@@ -120,7 +120,7 @@ export type WorkflowCreatedData = {
 
 /** A stored registry entry as the client holds it: stamped with its conversation. */
 export const fromRegistryEntries = (
-  entries: Schema<"ArtifactRegistryEntry">[],
+  entries: ArtifactRegistryEntry[],
   sessionId: string,
 ): ArtifactData[] =>
   entries.map((entry) => ({

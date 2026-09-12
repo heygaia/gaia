@@ -5,7 +5,14 @@
 // Core message types
 // ---------------------------------------------------------------------------
 
-import type { Schema } from "../api/generated";
+import type { RecurrenceData, ToolDataEntry } from "../api/generated";
+
+export type {
+  RecurrenceData,
+  RecurrenceRule,
+  ReplyToMessageData,
+  ToolDataEntry,
+} from "../api/generated";
 
 export interface ApiFileData {
   fileId: string;
@@ -21,8 +28,6 @@ export interface ApiToolData {
   timestamp?: string | null;
   tool_category?: string;
 }
-
-export type ReplyToMessageData = Schema<"ReplyToMessageData">;
 
 export interface Conversation {
   id: string;
@@ -251,10 +256,6 @@ export interface PeopleSearchData {
 // ---------------------------------------------------------------------------
 // Calendar
 // ---------------------------------------------------------------------------
-
-export type RecurrenceRule = Schema<"RecurrenceRule">;
-
-export type RecurrenceData = Schema<"RecurrenceData">;
 
 export interface CalendarEventDateTime {
   date?: string;
@@ -858,8 +859,6 @@ export interface ToolDataMap {
   todo_progress: TodoProgressData;
   chart_data: GenericToolData[];
 }
-
-export type ToolDataEntry = Schema<"ToolDataEntry">;
 
 export function isKnownTool(name: string): name is ToolName {
   const knownTools = new Set<string>([

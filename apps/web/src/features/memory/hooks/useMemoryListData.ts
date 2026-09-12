@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { MemoryEntry, MemoryListResponse } from "@shared/api/generated";
 import { useCallback, useEffect, useState } from "react";
 import { memoryApi } from "@/features/memory/api/memoryApi";
 import { MEMORY_PAGE_SIZE } from "@/features/memory/constants";
@@ -11,12 +11,12 @@ const SEARCH_DEBOUNCE_MS = 250;
  */
 export function useMemoryListData() {
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<Schema<"MemoryListResponse"> | null>(null);
+  const [data, setData] = useState<MemoryListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<
-    Schema<"MemoryEntry">[] | null
-  >(null);
+  const [searchResults, setSearchResults] = useState<MemoryEntry[] | null>(
+    null,
+  );
 
   const fetchPage = useCallback(async (pageToLoad: number) => {
     setLoading(true);

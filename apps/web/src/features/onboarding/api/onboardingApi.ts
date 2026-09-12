@@ -3,10 +3,13 @@
  * all auth, error toast, and analytics behaviour come from there.
  */
 
-import type { Schema } from "@shared/api/generated";
+import type {
+  MintPlatformLinkCodeResponse,
+  OnboardingPreferences,
+} from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 
-export type OnboardingPreferencesArgs = Schema<"OnboardingPreferences">;
+export type OnboardingPreferencesArgs = OnboardingPreferences;
 
 /**
  * Writes Q1 + Q2 as soon as they are answered, well before the flow's final
@@ -28,7 +31,7 @@ export function resetOnboarding() {
   return api.post("/api/v1/onboarding/reset", { silent: true });
 }
 
-export type LinkCodeResponse = Schema<"MintPlatformLinkCodeResponse">;
+export type LinkCodeResponse = MintPlatformLinkCodeResponse;
 
 /**
  * Mints the one-tap linking code for the platform-pick step.

@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { CreateMemoryRequest, MemoryDocType } from "@shared/api/generated";
 import { api } from "@/lib/api/typed";
 
 interface ListMemoriesParams {
@@ -41,14 +41,14 @@ export const memoryApi = {
 
   getDocuments: () => api.get("/api/v1/memory/documents", { silent: true }),
 
-  updateDocument: (docType: Schema<"MemoryDocType">, content: string) =>
+  updateDocument: (docType: MemoryDocType, content: string) =>
     api.put("/api/v1/memory/documents/{doc_type}", {
       path: { doc_type: docType },
       body: { content },
       silent: true,
     }),
 
-  createMemory: (request: Schema<"CreateMemoryRequest">) =>
+  createMemory: (request: CreateMemoryRequest) =>
     api.post("/api/v1/memory", { body: request, silent: true }),
 
   updateMemory: (id: string, content: string) =>

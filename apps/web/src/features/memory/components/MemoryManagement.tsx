@@ -13,7 +13,7 @@ import {
   NeuralNetworkIcon,
   Note01Icon,
 } from "@icons";
-import type { Schema } from "@shared/api/generated";
+import type { MemoryOverviewResponse } from "@shared/api/generated";
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useState } from "react";
@@ -54,8 +54,7 @@ export default function MemoryManagement({
   autoFetch = true,
 }: MemoryManagementProps) {
   const [selectedTab, setSelectedTab] = useState("folders");
-  const [overview, setOverview] =
-    useState<Schema<"MemoryOverviewResponse"> | null>(null);
+  const [overview, setOverview] = useState<MemoryOverviewResponse | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
 
   const fetchOverview = useCallback(async () => {

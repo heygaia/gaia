@@ -7,7 +7,19 @@
  * from `../types`.
  */
 
-import type { Schema } from "@shared/api/generated";
+import type {
+  CommunityIntegrationItem,
+  CommunityListResponse,
+  CreateCustomIntegrationResponse,
+  IntegrationContent,
+  IntegrationInstructionsResponse,
+} from "@shared/api/generated";
+
+export type {
+  CreateCustomIntegrationRequest,
+  CreateCustomIntegrationResponse,
+  IntegrationContent,
+} from "@shared/api/generated";
 
 export type {
   IntegrationConnectionData,
@@ -30,7 +42,7 @@ export type IntegrationCategoryValue =
   | "capabilities"
   | "other";
 
-export type IntegrationInstructions = Schema<"IntegrationInstructionsResponse">;
+export type IntegrationInstructions = IntegrationInstructionsResponse;
 
 export interface Integration {
   id: string;
@@ -59,15 +71,10 @@ export interface Integration {
   slug: string;
 }
 
-export type CreateCustomIntegrationRequest =
-  Schema<"CreateCustomIntegrationRequest">;
-
 /**
  * Response from create custom integration endpoint
  * Matches backend CreateCustomIntegrationResponse
  */
-export type CreateCustomIntegrationResponse =
-  Schema<"CreateCustomIntegrationResponse">;
 
 /**
  * Suggested public integration from search
@@ -95,14 +102,12 @@ export interface IntegrationListStreamData {
  * Community/Public Marketplace Types
  */
 
-export type IntegrationContent = Schema<"IntegrationContent">;
-
 /** A marketplace card; `source` is set client-side to tell native from community. */
-export type CommunityIntegration = Schema<"CommunityIntegrationItem"> & {
+export type CommunityIntegration = CommunityIntegrationItem & {
   source?: "platform" | "custom";
 };
 
-export type CommunityIntegrationsResponse = Schema<"CommunityListResponse">;
+export type CommunityIntegrationsResponse = CommunityListResponse;
 
 export interface PublicIntegrationResponse extends CommunityIntegration {
   mcpConfig?: {

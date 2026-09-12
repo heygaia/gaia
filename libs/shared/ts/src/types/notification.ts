@@ -1,4 +1,6 @@
-import type { Schema } from "../api/generated";
+import type { NotificationActionView } from "../api/generated";
+
+export type { ChannelPreferences } from "../api/generated";
 export enum NotificationStatus {
   PENDING = "pending",
   DELIVERED = "delivered",
@@ -40,7 +42,7 @@ export interface NotificationActionConfig {
   };
 }
 
-export type NotificationAction = Schema<"NotificationActionView">;
+export type NotificationAction = NotificationActionView;
 
 export interface InAppNotificationContent {
   title: string;
@@ -71,8 +73,6 @@ export interface PlatformLinksResponse {
 }
 
 export type ChannelPlatform = "telegram" | "discord" | "whatsapp" | "slack";
-
-export type ChannelPreferences = Schema<"ChannelPreferences">;
 
 export interface QuietHours {
   from: string;

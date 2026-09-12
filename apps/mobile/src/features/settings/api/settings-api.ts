@@ -1,4 +1,13 @@
-import type { Schema } from "@gaia/shared/api/generated";
+import type {
+  OnboardingPreferences,
+  UsageHistoryEntry,
+} from "@gaia/shared/api/generated";
+
+export type {
+  OnboardingPreferences,
+  UsageHistoryEntry,
+} from "@gaia/shared/api/generated";
+
 import type { HilPreferences } from "@gaia/shared/chat";
 import type { UsageSummary } from "@gaia/shared/types";
 import { apiService } from "@/lib/api";
@@ -9,10 +18,6 @@ export type {
   UsagePeriod,
   UsageSummary,
 } from "@gaia/shared/types";
-
-export type UsageHistoryEntry = Schema<"UsageHistoryEntry">;
-
-export type OnboardingPreferences = Schema<"OnboardingPreferences">;
 
 export interface UpdatePreferencesResponse {
   success: boolean;

@@ -1,27 +1,34 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  CheckoutSource,
+  CreateCheckoutSessionRequest,
+  CreateSubscriptionRequest,
+  CreateSubscriptionResponse,
+  PaymentVerificationResponse,
+  PlanResponse,
+  SubscriptionDocument,
+  UserSubscriptionStatus,
+} from "@shared/api/generated";
+
+export type {
+  CheckoutSource,
+  CreateCheckoutSessionRequest,
+  CreateSubscriptionRequest,
+  CreateSubscriptionResponse,
+  PaymentVerificationResponse,
+  UserSubscriptionStatus,
+} from "@shared/api/generated";
+
 import type { AxiosError } from "axios";
 import { getErrorMessage } from "@/lib/api/errors";
 import { api } from "@/lib/api/typed";
 
-export type Plan = Schema<"PlanResponse">;
+export type Plan = PlanResponse;
 
 /** Where in the product a checkout was started. Mirrors `CheckoutSource` in
  *  `app/models/payment_models.py`; the server emits it as a property on
  *  `payment:checkout_started`, so a new surface adds a member on both sides. */
-export type CheckoutSource = Schema<"CheckoutSource">;
 
-export type CreateSubscriptionRequest = Schema<"CreateSubscriptionRequest">;
-
-export type CreateCheckoutSessionRequest =
-  Schema<"CreateCheckoutSessionRequest">;
-
-export type CreateSubscriptionResponse = Schema<"CreateSubscriptionResponse">;
-
-export type PaymentVerificationResponse = Schema<"PaymentVerificationResponse">;
-
-export type Subscription = Schema<"SubscriptionDocument">;
-
-export type UserSubscriptionStatus = Schema<"UserSubscriptionStatus">;
+export type Subscription = SubscriptionDocument;
 
 // Helper function for consistent error handling
 const handleApiError = (error: unknown, context: string): never => {

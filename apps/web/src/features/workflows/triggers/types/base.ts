@@ -1,4 +1,4 @@
-import type { Schema } from "@shared/api/generated";
+import type { WorkflowTriggerResponse } from "@shared/api/generated";
 /**
  * Base trigger types and interfaces.
  *
@@ -13,4 +13,4 @@ import type { Schema } from "@shared/api/generated";
  * Complete trigger schema from backend API.
  * Fetched via /triggers/schema endpoint.
  */
-export type TriggerSchema = Schema<"WorkflowTriggerResponse">;
+export type TriggerSchema = WorkflowTriggerResponse;

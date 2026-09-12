@@ -1,4 +1,8 @@
-import type { Schema } from "@shared/api/generated";
+import type {
+  AuthenticatedUserResponse,
+  TodoResponse,
+  TodoUpdateRequest,
+} from "@shared/api/generated";
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 const request = vi.fn();
@@ -60,18 +64,18 @@ describe("path-typed api client", () => {
   });
 
   it("types the response, the body and the parameters from the schema", () => {
-    expectTypeOf<ApiResponse<"get", "/api/v1/user/me">>().toEqualTypeOf<
-      Schema<"AuthenticatedUserResponse">
-    >();
-    expectTypeOf<ApiResponse<"put", "/api/v1/todos/{todo_id}">>().toEqualTypeOf<
-      Schema<"TodoResponse">
-    >();
+    expectTypeOf<
+      ApiResponse<"get", "/api/v1/user/me">
+    >().toEqualTypeOf<AuthenticatedUserResponse>();
+    expectTypeOf<
+      ApiResponse<"put", "/api/v1/todos/{todo_id}">
+    >().toEqualTypeOf<TodoResponse>();
     expectTypeOf<
       ApiResponse<"delete", "/api/v1/todos/{todo_id}">
     >().toEqualTypeOf<undefined>();
-    expectTypeOf<ApiBody<"put", "/api/v1/todos/{todo_id}">>().toEqualTypeOf<
-      Schema<"TodoUpdateRequest">
-    >();
+    expectTypeOf<
+      ApiBody<"put", "/api/v1/todos/{todo_id}">
+    >().toEqualTypeOf<TodoUpdateRequest>();
     // Never called: these exist for the compiler, which must reject each one.
     const rejected = () => {
       // @ts-expect-error -- a path the API does not serve

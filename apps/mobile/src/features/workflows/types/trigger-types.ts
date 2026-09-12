@@ -1,5 +1,4 @@
-import type { Schema } from "@gaia/shared/api/generated";
-export type TriggerType = Schema<"TriggerType">;
+export type { TriggerConfig, TriggerType } from "@gaia/shared/api/generated";
 
 export interface TriggerSchema {
   slug: string;
@@ -19,8 +18,6 @@ export interface TriggerFieldSchema {
   options_endpoint?: string;
   description?: string;
 }
-
-export type TriggerConfig = Schema<"TriggerConfig">;
 
 export interface TriggerSchemasResponse {
   schemas: TriggerSchema[];
