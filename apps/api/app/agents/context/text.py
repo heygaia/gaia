@@ -57,8 +57,11 @@ EXECUTOR_CONNECTED_DEVICES_HEADER = (
     "user's machine, use run_on_device(device_id, command) - pass the id shown in each line "
     "below VERBATIM as device_id (never the name). Its shell runs on the user's real machine; "
     "the sandbox shell is a cloud container that CANNOT see it, so NEVER answer a question "
-    "about the user's own files or apps by running commands in the sandbox. Use list_devices "
-    "for live online status and the MCP servers a device exposes:"
+    "about the user's own files or apps by running commands in the sandbox. A device may also "
+    "expose its own MCP servers (listed after 'exposing:' on each line); to use one, work "
+    "through that server's own tools - retrieve them and hand off to its subagent - rather "
+    "than run_on_device. Use list_devices for live online status and the MCP servers a device "
+    "exposes:"
 )
 
 
