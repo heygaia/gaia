@@ -1,4 +1,3 @@
-import type { Schema } from "@shared/api/generated";
 import { apiauth } from "@/lib/api/client";
 import { api } from "@/lib/api/typed";
 
@@ -6,8 +5,6 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(
   /\/$/,
   "",
 );
-
-export type ArtifactInfo = Schema<"ArtifactInfo">;
 
 function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");

@@ -14,7 +14,6 @@ import type { Schema } from "@shared/api/generated";
 import type {
   TriggerConfig,
   TriggerConfigDraft,
-  TriggerSchema,
 } from "@/features/workflows/triggers/types";
 import type { ContentCreator } from "@/types/shared/contentTypes";
 
@@ -35,7 +34,7 @@ export type PublicWorkflowStep = Schema<"PublicWorkflowStep">;
 
 // Re-export trigger types for convenience
 // Re-export shared types that are identical between web and mobile
-export type { TriggerConfig, TriggerConfigDraft, TriggerSchema };
+export type { TriggerConfig, TriggerConfigDraft };
 
 // ============================================================================
 // COMMUNITY & EXPLORE WORKFLOW TYPES
@@ -46,11 +45,6 @@ export type { TriggerConfig, TriggerConfigDraft, TriggerSchema };
  * Also used for Explore workflows (featured workflows on landing/workflows pages)
  */
 export type CommunityWorkflow = Schema<"PublicWorkflowCard">;
-
-/**
- * Response type for community/explore workflows API
- */
-export type CommunityWorkflowsResponse = Schema<"PublicWorkflowsResponse">;
 
 // ============================================================================
 // USE CASE TYPES (Landing Page Content & Templates)
@@ -101,10 +95,3 @@ export type Workflow = Schema<"WorkflowWithIntegrations">;
 export type CreateWorkflowRequest = Schema<"CreateWorkflowRequest">;
 
 export type WorkflowExecutionRequest = Schema<"WorkflowExecutionRequest">;
-
-// API response types
-export type WorkflowListResponse = Schema<"WorkflowListResponse">;
-
-export type WorkflowResponse = Schema<"WorkflowResponse">;
-
-export type WorkflowExecutionResponse = Schema<"WorkflowExecutionResponse">;

@@ -90,21 +90,6 @@ export interface ChatStreamRequest {
   isOnboardingDemo: boolean;
 }
 
-export interface FileUploadResponse {
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  contentType: string;
-  url?: string;
-  description?: string;
-  message?: string;
-}
-
-export interface GenerateImageResponse {
-  url: string;
-  improved_prompt?: string;
-}
-
 /** The API's enum; the members are the ones the web reads by name. */
 export type SystemPurpose = Schema<"SystemPurpose">;
 
@@ -116,17 +101,6 @@ export const SystemPurpose = {
   OTHER: "other",
 } as const satisfies Record<string, SystemPurpose>;
 
-export enum ConversationSource {
-  WEB = "web",
-  MOBILE = "mobile",
-  DESKTOP = "desktop",
-  TELEGRAM = "telegram",
-  DISCORD = "discord",
-  SLACK = "slack",
-  WHATSAPP = "whatsapp",
-  WORKFLOW_SYSTEM = "workflow_system",
-}
-
 export type Conversation = Schema<"ConversationSummary">;
 
 /**
@@ -137,8 +111,6 @@ export type Conversation = Schema<"ConversationSummary">;
 export const toClientMessages = (
   messages: Schema<"MessageModel-Output">[],
 ): MessageType[] => messages as unknown as MessageType[];
-
-export type FetchConversationsResponse = Schema<"ConversationListResponse">;
 
 export type ConversationSyncItem = Schema<"ConversationSyncItem">;
 

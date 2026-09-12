@@ -12,8 +12,6 @@ import type { Schema } from "@shared/api/generated";
 export type {
   IntegrationConnectionData,
   IntegrationStatusRecord as IntegrationStatus,
-  IntegrationToolsResponse,
-  MyIntegrationsResponse,
 } from "@shared/types";
 
 /**
@@ -98,8 +96,6 @@ export interface IntegrationListStreamData {
  */
 
 export type IntegrationContent = Schema<"IntegrationContent">;
-
-export type CommunityIntegrationCreator = Schema<"CommunityIntegrationCreator">;
 
 /** A marketplace card; `source` is set client-side to tell native from community. */
 export type CommunityIntegration = Schema<"CommunityIntegrationItem"> & {

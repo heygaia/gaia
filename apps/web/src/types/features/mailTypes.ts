@@ -96,14 +96,6 @@ export interface EmailImportanceSummary {
   content_preview: string;
 }
 
-export interface EmailSummariesResponse {
-  status: string;
-  emails: EmailImportanceSummary[];
-  count: number;
-  filtered_by_importance?: boolean;
-  searched_labels?: string[];
-}
-
 export type EmailFetchData = {
   from: string;
   subject: string;

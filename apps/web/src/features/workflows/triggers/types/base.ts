@@ -10,11 +10,6 @@ import type { Schema } from "@shared/api/generated";
 // =============================================================================
 
 /**
- * Schema for a single trigger config field from backend.
- */
-export type TriggerFieldSchema = Schema<"TriggerConfigFieldSchema">;
-
-/**
  * Complete trigger schema from backend API.
  * Fetched via /triggers/schema endpoint.
  */
