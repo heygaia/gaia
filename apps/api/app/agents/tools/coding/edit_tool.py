@@ -20,6 +20,7 @@ from app.agents.tools.coding._context import (
 from app.agents.workspace.paths import WORKSPACE_ROOT, MountRole
 from app.constants.account import account_mutation_refusal
 from app.decorators import with_doc, with_rate_limiting
+from app.services import gaia_task_files
 from app.services.sandbox import SandboxAcquisitionError, acquire_sandbox
 from app.services.storage import FsOps, fs_timer
 from app.templates.docstrings.coding_tools_docs import EDIT_TOOL
@@ -70,6 +71,16 @@ async def edit(
     if refusal is not None:
         return refusal
 
+    # Tracked-todo files are edited on the todo document, not in the sandbox.
+    try:
+        task_ref = await gaia_task_files.resolve(rel, user_id)
+    except gaia_task_files.GaiaTaskPathError as e:
+        return f"Error: {e}"
+    if task_ref is not None:
+        return await _edit_task_file(
+            task_ref, user_id, abs_path, old_string, new_string, replace_all, session_id
+        )
+
     try:
         async with fs_timer(FsOps.TOOL_EDIT), acquire_sandbox(user_id) as sbx:
             return await _do_edit(
@@ -112,6 +123,62 @@ async def _read_editable_content(sbx: AsyncSandbox, abs_path: str) -> tuple[str 
         return None, "Error: file is not UTF-8; cannot edit"
 
 
+def _apply_replacement(
+    content: str, old_string: str, new_string: str, replace_all: bool
+) -> tuple[str, int] | str:
+    """``(new_content, replaced_count)`` or the user-facing error string."""
+    occurrences = content.count(old_string)
+    if occurrences == 0:
+        return "Error: old_string not found in file"
+    if occurrences > 1 and not replace_all:
+        return (
+            f"Error: old_string appears {occurrences} times. "
+            "Pass replace_all=True or add surrounding context to disambiguate."
+        )
+    if replace_all:
+        return content.replace(old_string, new_string), occurrences
+    return content.replace(old_string, new_string, 1), 1
+
+
+def _emit_edit(abs_path: str, size_bytes: int, replaced: int, session_id: str | None) -> str:
+    safe_emit(
+        {
+            "file_data": {
+                "operation": "edit",
+                "path": abs_path,
+                "size_bytes": size_bytes,
+                "occurrences_replaced": replaced,
+            }
+        },
+        session_id=session_id,
+    )
+    return f"Edited {abs_path} ({replaced} occurrence{'s' if replaced > 1 else ''} replaced)"
+
+
+async def _edit_task_file(
+    task_ref: gaia_task_files.GaiaTaskPath,
+    user_id: str,
+    abs_path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool,
+    session_id: str | None,
+) -> str:
+    refusal = gaia_task_files.write_refusal(task_ref)
+    if refusal is not None:
+        return refusal
+    content = await gaia_task_files.read_file(task_ref, user_id)
+    outcome = _apply_replacement(content, old_string, new_string, replace_all)
+    if isinstance(outcome, str):
+        return outcome
+    new_content, replaced = outcome
+    refusal = await gaia_task_files.write_file(task_ref, user_id, new_content)
+    if refusal is not None:
+        return refusal
+    log.set(write_via="todo_document")
+    return _emit_edit(abs_path, len(new_content.encode("utf-8")), replaced, session_id)
+
+
 async def _do_edit(
     sbx: AsyncSandbox,
     user_id: str,
@@ -127,34 +194,13 @@ async def _do_edit(
     if content is None:
         return error
 
-    occurrences = content.count(old_string)
-    if occurrences == 0:
-        return "Error: old_string not found in file"
-    if occurrences > 1 and not replace_all:
-        return (
-            f"Error: old_string appears {occurrences} times. "
-            "Pass replace_all=True or add surrounding context to disambiguate."
-        )
-
-    if replace_all:
-        new_content = content.replace(old_string, new_string)
-    else:
-        new_content = content.replace(old_string, new_string, 1)
+    outcome = _apply_replacement(content, old_string, new_string, replace_all)
+    if isinstance(outcome, str):
+        return outcome
+    new_content, replaced = outcome
 
     new_bytes = new_content.encode("utf-8")
     real_mtime = await atomic_write(sbx, abs_path, new_bytes)
-
-    safe_emit(
-        {
-            "file_data": {
-                "operation": "edit",
-                "path": abs_path,
-                "size_bytes": len(new_bytes),
-                "occurrences_replaced": occurrences if replace_all else 1,
-            }
-        },
-        session_id=session_id,
-    )
 
     # Surface the edit live in chat when it lands under artifacts/ — same path
     # the write tool takes, so an edited artifact card updates during the turn.
@@ -162,7 +208,4 @@ async def _do_edit(
         user_id, role, role_conv, abs_path, new_content, len(new_bytes), real_mtime
     )
 
-    return (
-        f"Edited {abs_path} ({occurrences if replace_all else 1} "
-        f"occurrence{'s' if (replace_all and occurrences > 1) else ''} replaced)"
-    )
+    return _emit_edit(abs_path, len(new_bytes), replaced, session_id)

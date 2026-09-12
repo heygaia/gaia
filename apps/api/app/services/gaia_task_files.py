@@ -113,9 +113,8 @@ async def read_file(ref: GaiaTaskPath, user_id: str) -> str:
             return meta_body(project_gaia_task(doc)["meta"])
 
 
-async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | None:
-    """Persist a write to canvas.md / activity.md. Returns a refusal message
-    for anything else, None on success."""
+def write_refusal(ref: GaiaTaskPath) -> str | None:
+    """Why this path cannot be written, or None when it can."""
     if isinstance(ref, RootFile):
         return f"Error: {ref.name} is generated from the todos and cannot be edited."
     if ref.filename not in WRITABLE_FILES:
@@ -123,6 +122,15 @@ async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | Non
             f"Error: {ref.filename.value} is system-written. Only canvas.md and "
             "activity.md are editable under gaia-tasks/."
         )
+    return None
+
+
+async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | None:
+    """Persist a write to canvas.md / activity.md. Returns a refusal message
+    for anything else, None on success."""
+    refusal = write_refusal(ref)
+    if refusal is not None or not isinstance(ref, TaskFile):
+        return refusal
     writer = write_canvas if ref.filename is GaiaTaskFile.CANVAS else write_activity
     if not await writer(ref.todo.id, user_id, content):
         return f"Error: tracked todo {ref.todo.id} no longer exists."
@@ -150,4 +158,5 @@ __all__ = [
     "resolve",
     "task_folder",
     "write_file",
+    "write_refusal",
 ]

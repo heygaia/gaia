@@ -26,6 +26,7 @@ from app.agents.workspace.system_files import system_file_body
 from app.constants.log_tags import LogTag
 from app.constants.media import MAX_IMAGE_FILE_BYTES
 from app.decorators import with_doc, with_rate_limiting
+from app.services import gaia_task_files
 from app.services.sandbox import SandboxAcquisitionError, acquire_sandbox
 from app.services.storage import FsOps, JuiceFSUnavailable, fs_timer, read_user_file
 from app.services.storage.juicefs import (
@@ -90,6 +91,18 @@ async def read(
     body = system_file_body(rel)
     if body is not None and not await user_owns_regular_file(user_id, rel):
         log.set(read_via="memory")
+        return _format_text_read(abs_path, body, offset, limit, session_id)
+
+    # Tracked-todo files live on the todo document, not on disk: serve them
+    # from Mongo so they read the same in native dev (no projection) and in
+    # the sandbox, and never pay a sandbox resume.
+    try:
+        task_ref = await gaia_task_files.resolve(rel, user_id)
+    except gaia_task_files.GaiaTaskPathError as e:
+        return f"Error: {e}"
+    if task_ref is not None:
+        log.set(read_via="todo_document")
+        body = await gaia_task_files.read_file(task_ref, user_id)
         return _format_text_read(abs_path, body, offset, limit, session_id)
 
     try:

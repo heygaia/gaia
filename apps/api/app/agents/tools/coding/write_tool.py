@@ -20,6 +20,7 @@ from app.agents.workspace.paths import WORKSPACE_ROOT, MountRole
 from app.constants.account import account_mutation_refusal
 from app.constants.log_tags import LogTag
 from app.decorators import with_doc, with_rate_limiting
+from app.services import gaia_task_files
 from app.services.sandbox import SandboxAcquisitionError, acquire_sandbox
 from app.services.storage import FsOps, add_fs_bytes, fs_timer
 from app.templates.docstrings.coding_tools_docs import WRITE_TOOL
@@ -63,6 +64,24 @@ async def write(
     encoded = content.encode("utf-8")
     if len(encoded) > MAX_CONTENT_BYTES:
         return f"Error: content exceeds {MAX_CONTENT_BYTES} bytes"
+
+    # Tracked-todo files (canvas.md / activity.md) are stored on the todo
+    # document; the on-disk copy is a read-only projection repainted by the
+    # sync, so the write goes to Mongo and never touches the sandbox.
+    try:
+        task_ref = await gaia_task_files.resolve(rel, user_id)
+    except gaia_task_files.GaiaTaskPathError as e:
+        return f"Error: {e}"
+    if task_ref is not None:
+        refusal = await gaia_task_files.write_file(task_ref, user_id, content)
+        if refusal is not None:
+            return refusal
+        log.set(write_via="todo_document")
+        safe_emit(
+            {"file_data": {"operation": "write", "path": abs_path, "size_bytes": len(encoded)}},
+            session_id=session_id,
+        )
+        return f"Wrote {len(encoded)} bytes to {abs_path}"
 
     try:
         async with fs_timer(FsOps.TOOL_WRITE), acquire_sandbox(user_id) as sbx:
