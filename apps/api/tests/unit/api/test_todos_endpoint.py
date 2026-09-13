@@ -4,7 +4,7 @@ Covers the MAX_PAGE_NUMBER page bound on the todo list endpoint, the
 happy path with the service faked, and analytics captures on mutations.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
@@ -86,6 +86,54 @@ class TestListTodos:
         assert body["data"] == []
         assert body["meta"]["page"] == 1
         assert list_todos.await_args.args[0] == "507f1f77bcf86cd799439011"
+
+    async def test_list_passes_resolved_dates_to_service(self, client: AsyncClient) -> None:
+        with patch(
+            f"{TODOS_ENDPOINT}.TodoService.list_todos",
+            new_callable=AsyncMock,
+            return_value=_empty_list_response(),
+        ) as list_todos:
+            resp = await client.get(
+                "/api/v1/todos?page=2&per_page=10"
+                "&due_after=2026-01-01T00:00:00Z&due_before=2026-02-01T00:00:00Z"
+            )
+
+        assert resp.status_code == 200
+        params = list_todos.await_args.args[1]
+        assert params.page == 2
+        assert params.per_page == 10
+        # The explicit range must survive resolution into the search params.
+        assert params.due_date_start == datetime(2026, 1, 1, tzinfo=UTC)
+        assert params.due_date_end == datetime(2026, 2, 1, tzinfo=UTC)
+
+    async def test_list_logs_the_search_context(self, client: AsyncClient) -> None:
+        with (
+            patch(
+                f"{TODOS_ENDPOINT}.TodoService.list_todos",
+                new_callable=AsyncMock,
+                return_value=_empty_list_response(),
+            ),
+            patch(f"{TODOS_ENDPOINT}.log.set") as set_log,
+        ):
+            resp = await client.get(
+                "/api/v1/todos?q=launch&mode=semantic&project_id=p1&page=2&per_page=10"
+            )
+
+        assert resp.status_code == 200
+        # Every key here is consumed by dashboards/alerts, so a renamed key or a
+        # dropped filter set is a silent observability regression.
+        set_log.assert_any_call(
+            user={"id": "507f1f77bcf86cd799439011"},
+            todo={
+                "operation": "list",
+                "search_mode": "semantic",
+                "query": "launch",
+                "page": 2,
+                "per_page": 10,
+                "filters_applied": ["query", "project"],
+                "project_id": "p1",
+            },
+        )
 
 
 class TestTodoAnalytics:
@@ -199,6 +247,23 @@ class TestListQueryHelpers:
         assert start is not None and start.tzinfo is UTC
         assert end is not None and end.tzinfo is UTC
 
+    def test_due_today_asks_for_utc_now(self, monkeypatch: pytest.MonkeyPatch):
+        now_calls: list[tzinfo | None] = []
+
+        class _RecordingDatetime(datetime):
+            @classmethod
+            def now(cls, tz: tzinfo | None = None) -> datetime:
+                now_calls.append(tz)
+                return super().now(tz)
+
+        monkeypatch.setattr(f"{TODOS_ENDPOINT}.datetime", _RecordingDatetime)
+
+        _resolve_todo_date_range(TodoListQuery(due_today=True))
+
+        # A naive local ``datetime.now()`` would silently shift the day bounds
+        # for non-UTC deployments; the tz is the observable contract here.
+        assert now_calls == [UTC]
+
     def test_due_this_week_is_a_seven_day_window(self):
         start, end = _resolve_todo_date_range(TodoListQuery(due_this_week=True))
 
@@ -262,10 +327,10 @@ class TestTodoCanvas:
             activity_content="- 2026-09-01T09:00:00+00:00 started",
         )
         with patch(
-            "app.services.todo_canvas_storage.todo_repository.get",
+            f"{TODOS_ENDPOINT}.todo_repository.get",
             new_callable=AsyncMock,
             return_value=doc,
-        ):
+        ) as get:
             resp = await client.get("/api/v1/todos/todo-1/canvas")
 
         assert resp.status_code == 200
@@ -273,25 +338,28 @@ class TestTodoCanvas:
             "content": "# Fix the thing",
             "activity": "- 2026-09-01T09:00:00+00:00 started",
         }
+        get.assert_awaited_once_with("todo-1", user_id="507f1f77bcf86cd799439011")
 
     async def test_unset_bodies_read_as_empty(self, client: AsyncClient) -> None:
         doc = TodoDocument(id="todo-1", user_id="507f1f77bcf86cd799439011", title="t")
         with patch(
-            "app.services.todo_canvas_storage.todo_repository.get",
+            f"{TODOS_ENDPOINT}.todo_repository.get",
             new_callable=AsyncMock,
             return_value=doc,
-        ):
+        ) as get:
             resp = await client.get("/api/v1/todos/todo-1/canvas")
 
         assert resp.json() == {"content": "", "activity": ""}
+        get.assert_awaited_once_with("todo-1", user_id="507f1f77bcf86cd799439011")
 
     async def test_missing_todo_is_404(self, client: AsyncClient) -> None:
         with patch(
-            "app.services.todo_canvas_storage.todo_repository.get",
+            f"{TODOS_ENDPOINT}.todo_repository.get",
             new_callable=AsyncMock,
             return_value=None,
-        ):
+        ) as get:
             resp = await client.get("/api/v1/todos/todo-1/canvas")
 
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Todo not found"
+        get.assert_awaited_once_with("todo-1", user_id="507f1f77bcf86cd799439011")

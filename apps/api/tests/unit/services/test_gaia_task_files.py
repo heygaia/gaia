@@ -87,6 +87,9 @@ class TestResolve:
 
         assert ref == TaskFile(todo=doc, filename=GaiaTaskFile.ACTIVITY)
         mock_repo.find_tracked_by_short_id.assert_not_awaited()
+        # The full id is looked up for THIS user — a dropped/swapped folder or
+        # user_id silently reads another user's todo.
+        mock_repo.get.assert_awaited_once_with(TODO_ID, user_id=USER_ID)
 
     async def test_full_id_of_a_non_tracked_todo_is_an_error(self, mock_repo):
         mock_repo.get.return_value = _doc(labels=["work"])
@@ -94,15 +97,36 @@ class TestResolve:
         with pytest.raises(GaiaTaskPathError, match="not a tracked todo"):
             await resolve(f"gaia-tasks/{TODO_ID}/canvas.md", USER_ID)
 
+    async def test_a_full_id_that_exists_for_no_one_names_the_id(self, mock_repo):
+        # A well-formed ObjectId the repo cannot find (wrong user or deleted) is
+        # its own error, distinct from "not a tracked todo" and from the
+        # short-id no-match — the message must carry the id that was tried.
+        with pytest.raises(GaiaTaskPathError, match=f"no tracked todo with id {TODO_ID}"):
+            await resolve(f"gaia-tasks/{TODO_ID}/canvas.md", USER_ID)
+
     async def test_unknown_folder_is_an_error(self, mock_repo):
-        with pytest.raises(GaiaTaskPathError, match="no tracked todo"):
+        with pytest.raises(GaiaTaskPathError) as exc:
             await resolve(f"gaia-tasks/{FOLDER}/canvas.md", USER_ID)
+
+        message = str(exc.value)
+        assert "no tracked todo" in message
+        # The recovery hint must survive verbatim — an uppercased or mangled
+        # copy of it still "contains" nothing useful to the model.
+        assert "/ or read its index.md for the current folder names" in message
 
     async def test_ambiguous_short_id_is_an_error(self, mock_repo):
-        mock_repo.find_tracked_by_short_id.return_value = [_doc(), _doc(id="a" * 16 + SHORT)]
+        second_id = "a" * 16 + SHORT
+        mock_repo.find_tracked_by_short_id.return_value = [_doc(), _doc(id=second_id)]
 
-        with pytest.raises(GaiaTaskPathError, match="matches 2"):
+        with pytest.raises(GaiaTaskPathError) as exc:
             await resolve(f"gaia-tasks/{FOLDER}/canvas.md", USER_ID)
+
+        message = str(exc.value)
+        assert "matches 2" in message
+        # Every colliding id is listed so the caller can pick one; the recovery
+        # hint is verbatim.
+        assert f"({TODO_ID}, {second_id})" in message
+        assert "; use the full todo id as the folder name instead" in message
 
     async def test_unknown_filename_in_task_folder_falls_through(self, mock_repo):
         mock_repo.find_tracked_by_short_id.return_value = [_doc()]
@@ -114,6 +138,17 @@ class TestResolve:
         the error must hand the model the path it meant."""
         with pytest.raises(GaiaTaskPathError, match="/workspace/gaia-tasks/"):
             await resolve(f"sessions/conv-1/scratch/gaia-tasks/{FOLDER}/canvas.md", USER_ID)
+
+    async def test_gaia_tasks_as_the_second_segment_rebuilds_the_full_tail(self, mock_repo):
+        # `gaia-tasks` can appear at any depth, including index 1 — the detector
+        # must scan the whole remainder, not skip the first element, and the
+        # suggestion must join the real tail back onto /workspace/.
+        with pytest.raises(GaiaTaskPathError) as exc:
+            await resolve(f"sessions/gaia-tasks/{FOLDER}/canvas.md", USER_ID)
+
+        message = str(exc.value)
+        assert "use /workspace/gaia-tasks/" in message
+        assert f"gaia-tasks/{FOLDER}/canvas.md" in message
 
     async def test_nested_path_falls_through(self, mock_repo):
         assert await resolve(f"gaia-tasks/{FOLDER}/sub/canvas.md", USER_ID) is None
@@ -130,10 +165,11 @@ class TestReadFile:
         assert await read_file(TaskFile(doc, GaiaTaskFile.LOG), USER_ID) == doc.log_content
 
     async def test_unset_bodies_read_as_empty(self, mock_repo):
-        doc = _doc(canvas_content=None, activity_content=None)
+        doc = _doc(canvas_content=None, activity_content=None, log_content=None)
 
         assert await read_file(TaskFile(doc, GaiaTaskFile.CANVAS), USER_ID) == ""
         assert await read_file(TaskFile(doc, GaiaTaskFile.ACTIVITY), USER_ID) == ""
+        assert await read_file(TaskFile(doc, GaiaTaskFile.LOG), USER_ID) == ""
 
     async def test_meta_json_matches_the_disk_projection(self, mock_repo):
         body = await read_file(TaskFile(_doc(), GaiaTaskFile.META), USER_ID)
@@ -142,10 +178,17 @@ class TestReadFile:
         assert '"completed": false' in body
 
     async def test_index_lists_the_active_set(self, mock_repo):
-        mock_repo.list_active_gaia_tracked_since.return_value = [_doc()]
+        projections = [project_gaia_task(_doc())]
+        with patch(
+            f"{_MOD}.fetch_active_projections",
+            new_callable=AsyncMock,
+            return_value=projections,
+        ) as fetch:
+            body = await read_file(RootFile("index.md"), USER_ID)
 
-        body = await read_file(RootFile("index.md"), USER_ID)
-
+        # The index is the user's own catalog — the lookup must be scoped to
+        # the caller, not an unfiltered/None query.
+        fetch.assert_awaited_once_with(USER_ID)
         assert f"`{FOLDER}`" in body
         assert "Fix the thing" in body
 
@@ -171,8 +214,14 @@ class TestWriteFile:
             TODO_ID, USER_ID, "# new", expected_updated_at=doc.updated_at
         )
         activity.assert_not_awaited()
-        assert syslog.await_args.kwargs["event_type"] == "CANVAS_UPDATED"
-        assert "canvas.md" in syslog.await_args.kwargs["details"]
+        # The audit line names this todo and this user, and records the file and
+        # character count verbatim.
+        syslog.assert_awaited_once_with(
+            todo_id=TODO_ID,
+            user_id=USER_ID,
+            event_type="CANVAS_UPDATED",
+            details="Agent wrote canvas.md (5 chars)",
+        )
 
     async def test_activity_write_goes_to_mongo(self, writers):
         canvas, activity, syslog = writers
@@ -193,7 +242,7 @@ class TestWriteFile:
 
         assert refusal is not None
         assert filename.value in refusal
-        assert "canvas.md" in refusal and "activity.md" in refusal
+        assert "Only canvas.md and activity.md are editable under gaia-tasks/." in refusal
         canvas.assert_not_awaited()
         activity.assert_not_awaited()
         syslog.assert_not_awaited()
@@ -211,6 +260,9 @@ class TestWriteFile:
         refusal = await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "x")
 
         assert refusal is not None and "no longer exists" in refusal
+        # The re-read must look up THIS todo for THIS user to tell deletion
+        # apart from a lost revision race.
+        mock_repo.get.assert_awaited_once_with(TODO_ID, user_id=USER_ID)
         syslog.assert_not_awaited()
 
     async def test_concurrent_write_raises_for_retry(self, writers, mock_repo):
@@ -218,9 +270,12 @@ class TestWriteFile:
         canvas.return_value = False
         mock_repo.get.return_value = _doc()
 
-        with pytest.raises(NoteConflictError):
+        with pytest.raises(NoteConflictError) as exc:
             await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "x")
 
+        # The conflict carries the todo id so a re-appliable caller knows what
+        # to re-resolve.
+        assert exc.value.args == (TODO_ID,)
         syslog.assert_not_awaited()
 
     async def test_audit_failure_still_succeeds(self, writers):
@@ -232,7 +287,15 @@ class TestWriteFile:
 
         assert result is None
         canvas.assert_awaited_once()
-        mock_log.warning.assert_called_once()
+        # A failed audit is logged with the real event and all context — a
+        # dropped keyword or a mangled message loses the only breadcrumb.
+        mock_log.warning.assert_called_once_with(
+            "gaia task audit log failed",
+            error_type="RuntimeError",
+            todo_id=TODO_ID,
+            user_id=USER_ID,
+            exc_info=True,
+        )
 
 
 class TestProjectGaiaTask:

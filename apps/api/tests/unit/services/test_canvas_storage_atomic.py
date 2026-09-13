@@ -142,9 +142,22 @@ class TestActivity:
         ok = await write_activity(TODO_ID, USER_ID, "- 2026-09-02 did a thing")
 
         assert ok is True
+        assert mock_repo.replace_note_fields.await_args.args == (TODO_ID, USER_ID)
         update = mock_repo.replace_note_fields.await_args.kwargs["update"]
         assert update.activity_content == "- 2026-09-02 did a thing"
         mock_sync.assert_called_once_with(USER_ID)
+
+    async def test_write_passes_expected_updated_at(self, mock_repo, mock_sync, captured_reindex):
+        from app.services.todo_canvas_storage import write_activity
+
+        expected = datetime.now(UTC)
+        mock_repo.replace_note_fields.return_value = _todo_doc()
+
+        ok = await write_activity(TODO_ID, USER_ID, "entry", expected_updated_at=expected)
+
+        assert ok is True
+        kwargs = mock_repo.replace_note_fields.await_args.kwargs
+        assert kwargs.get("expected_updated_at") == expected
 
     async def test_write_false_when_update_matches_nothing(self, mock_repo, mock_sync):
         from app.services.todo_canvas_storage import write_activity
@@ -160,7 +173,12 @@ class TestActivity:
 
         mock_repo.append_text_field.return_value = None
 
-        assert await append_activity(TODO_ID, USER_ID, "entry") is False
+        with patch(f"{_MOD}.log") as mock_log:
+            assert await append_activity(TODO_ID, USER_ID, "entry") is False
+
+        mock_log.warning.assert_called_once_with(
+            "todo_canvas.activity_append_missing_todo", todo_id=TODO_ID
+        )
 
     @pytest.mark.regression
     async def test_append_concatenates_atomically(self, mock_repo, mock_sync):
@@ -172,6 +190,7 @@ class TestActivity:
         ok = await append_activity(TODO_ID, USER_ID, "- new")
 
         assert ok is True
+        assert mock_repo.append_text_field.await_args.args == (TODO_ID, USER_ID)
         kwargs = mock_repo.append_text_field.await_args.kwargs
         assert kwargs["field"] == "activity_content"
         assert kwargs["suffix"] == "\n- new"
@@ -200,10 +219,25 @@ class TestWriteCanvasAndActivity:
 
         assert ok is True
         mock_repo.replace_note_fields.assert_awaited_once()
+        assert mock_repo.replace_note_fields.await_args.args == (TODO_ID, USER_ID)
         update = mock_repo.replace_note_fields.await_args.kwargs["update"]
         assert (update.canvas_content, update.activity_content) == ("c", "a")
         mock_sync.assert_called_once_with(USER_ID)
         assert [name for name, _ in scheduled] == ["canvas_reindex"]
+
+    async def test_passes_expected_updated_at(self, mock_repo, mock_sync, captured_reindex):
+        from app.services.todo_canvas_storage import write_canvas_and_activity
+
+        expected = datetime.now(UTC)
+        mock_repo.replace_note_fields.return_value = _todo_doc()
+
+        ok = await write_canvas_and_activity(
+            TODO_ID, USER_ID, canvas="c", activity="a", expected_updated_at=expected
+        )
+
+        assert ok is True
+        kwargs = mock_repo.replace_note_fields.await_args.kwargs
+        assert kwargs.get("expected_updated_at") == expected
 
     async def test_false_when_update_matches_nothing(self, mock_repo, mock_sync):
         from app.services.todo_canvas_storage import write_canvas_and_activity

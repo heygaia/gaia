@@ -116,6 +116,28 @@ class TestCreateTrackedTodo:
         assert update.activity_content.endswith("▶ tracked todo created")
         assert "Tracked todo created" in mock_deps.store.await_args.kwargs["canvas_content"]
 
+    async def test_activity_and_embedding_are_joined_with_a_blank_line(self, mock_repo, mock_deps):
+        """The moved activity, the creation marker, and the embedding text are
+        separate paragraphs joined by a blank line. Any other joiner welds them
+        into one line the append-only parser can no longer read."""
+        mock_deps.create.return_value = _todo_response()
+        fixed = datetime(2026, 9, 13, 12, 0, tzinfo=UTC)
+        initial = "# T\n\n## Activity Log\n- did x\n\n## Learnings\n"
+
+        with patch(f"{_MOD}.datetime") as m_dt:
+            m_dt.now.return_value = fixed
+            await TrackedTodoService.create_tracked_todo(
+                USER_ID, "Prepare Q3 report", initial_canvas=initial
+            )
+
+        update = mock_repo.update.await_args.kwargs["update"]
+        assert update.activity_content == (
+            "- did x\n\n- 2026-09-13T12:00:00+00:00 ▶ tracked todo created"
+        )
+        assert mock_deps.store.await_args.kwargs["canvas_content"] == (
+            "# T\n\n## Learnings\n\n\n- did x\n\n- 2026-09-13T12:00:00+00:00 ▶ tracked todo created"
+        )
+
     async def test_a_clean_initial_canvas_sets_no_activity(self, mock_repo, mock_deps):
         mock_deps.create.return_value = _todo_response()
 
@@ -346,7 +368,12 @@ class TestAppendActivityEntry:
     async def test_false_when_storage_raises(self, mock_repo, mock_deps):
         mock_deps.append_activity.side_effect = RuntimeError("mongo down")
 
-        assert await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "step") is False
+        with patch(f"{_MOD}.log") as m_log:
+            assert await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "step") is False
+
+        m_log.warning.assert_called_once_with(
+            "tracked_todo.activity_append_failed", todo_id=TODO_ID, error="mongo down"
+        )
 
 
 class TestSystemLog:
@@ -434,6 +461,8 @@ class TestMigrateLegacyCanvas:
             assert await TrackedTodoService.migrate_legacy_canvas(doc) is True
 
         kwargs = write.await_args.kwargs
+        assert write.await_args.args == (doc.id, doc.user_id)
+        assert kwargs["expected_updated_at"] == doc.updated_at
         assert "## Activity Log" not in kwargs["canvas"]
         assert "## Timeline" not in kwargs["canvas"]
         assert kwargs["activity"].index("first") < kwargs["activity"].index("second")
@@ -447,7 +476,10 @@ class TestMigrateLegacyCanvas:
             await TrackedTodoService.migrate_legacy_canvas(doc)
 
         activity = write.await_args.kwargs["activity"]
-        assert activity.index("did x") < activity.index("- already here")
+        assert activity == (
+            "- 2026-01-01T00:00:00+00:00 first\n\n- 2026-01-02T00:00:00+00:00 second\n\n"
+            "- did x\n\n- already here"
+        )
 
     async def test_clean_canvas_is_not_touched(self):
         doc = _todo_doc(canvas_content="# T\n\n## Key Details\nk\n\n## Learnings\n")
@@ -467,7 +499,7 @@ class TestMigrateLegacyCanvas:
         stale = _todo_doc(canvas_content=self.LEGACY, activity_content=None)
         fresh = _todo_doc(
             canvas_content=self.LEGACY,
-            activity_content=None,
+            activity_content="- fresh here",
             updated_at=datetime.now(UTC),
         )
         mock_repo.get.return_value = fresh
@@ -478,9 +510,39 @@ class TestMigrateLegacyCanvas:
         ) as write:
             assert await TrackedTodoService.migrate_legacy_canvas(stale) is True
 
+        mock_repo.get.assert_awaited_once_with(stale.id, user_id=stale.user_id)
         assert write.await_count == 2
+        assert write.await_args_list[0].args == (stale.id, stale.user_id)
+        assert write.await_args_list[1].args == (fresh.id, fresh.user_id)
         assert write.await_args_list[0].kwargs["expected_updated_at"] == stale.updated_at
         assert write.await_args_list[1].kwargs["expected_updated_at"] == fresh.updated_at
+        assert write.await_args_list[1].kwargs["canvas"] == (
+            "# T\n\n## Key Details\nk\n\n## Learnings\n"
+        )
+        assert write.await_args_list[1].kwargs["activity"] == (
+            "- 2026-01-01T00:00:00+00:00 first\n\n- 2026-01-02T00:00:00+00:00 second\n\n"
+            "- did x\n\n- fresh here"
+        )
+
+    async def test_fresh_doc_already_clean_skips_retry(self, mock_repo):
+        """When the re-read doc has no legacy sections, the migration gives up
+        instead of reporting a write it never made."""
+        fresh = _todo_doc(
+            canvas_content="# T\n\n## Key Details\nk\n\n## Learnings\n",
+            updated_at=datetime.now(UTC),
+        )
+        mock_repo.get.return_value = fresh
+        with patch(
+            f"{_MOD}.write_canvas_and_activity", new_callable=AsyncMock, return_value=False
+        ) as write:
+            assert (
+                await TrackedTodoService.migrate_legacy_canvas(
+                    _todo_doc(canvas_content=self.LEGACY)
+                )
+                is False
+            )
+
+        write.assert_awaited_once()
 
     async def test_vanished_todo_is_not_retried(self, mock_repo):
         mock_repo.get.return_value = None

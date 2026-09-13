@@ -932,6 +932,26 @@ class TestBuildExecutionPrompt:
         assert "older entries omitted" in prompt
         assert len(prompt) < ACTIVITY_PROMPT_TAIL_CHARS + 300
 
+    def test_a_truncated_activity_carries_the_full_exact_label(self):
+        """The truncation marker is *appended* to the label, not substituted for
+        it, and both halves are verbatim: a dropped "Recent activity (activity.md)"
+        or a reworded marker makes the section read as something the model can't
+        place — or hides that the log was cut at all."""
+        activity = "x" * (ACTIVITY_PROMPT_TAIL_CHARS + 1)
+        prompt = _build_execution_prompt(
+            title="Ship it",
+            description="",
+            canvas_content=None,
+            activity_content=activity,
+            reference_context="",
+        )
+
+        assert (
+            "Recent activity (activity.md) "
+            "(older entries omitted; read activity.md for the full log):\n"
+            + activity[-ACTIVITY_PROMPT_TAIL_CHARS:]
+        ) in prompt
+
     def test_short_activity_is_not_flagged_as_truncated(self):
         prompt = _build_execution_prompt(
             title="Ship it",
@@ -973,6 +993,13 @@ class TestExecuteViaAgent:
     def _entries(self) -> list[str]:
         return [c.kwargs["entry"] for c in self.timeline.call_args_list]
 
+    def _written_for(self) -> tuple[set[str | None], set[str | None]]:
+        """The (todo_id, user_id) pairs every recorded marker was written for."""
+        return (
+            {c.kwargs.get("todo_id") for c in self.timeline.call_args_list},
+            {c.kwargs.get("user_id") for c in self.timeline.call_args_list},
+        )
+
     async def test_writes_start_and_success_markers_around_the_agent_call(self):
         agent = AsyncMock(
             return_value=SilentRunResult(message="Deploy verified.\nAll green.", tool_data={})
@@ -986,6 +1013,9 @@ class TestExecuteViaAgent:
         assert " ▶ scheduled run started (conversation_id=" in start
         assert " ✓ scheduled run finished" in end
         assert "summary='Deploy verified. All green.'" in end
+        # Every marker lands on this todo and this user — a dropped or nulled id
+        # writes the run's evidence onto the wrong (or no) activity log.
+        assert self._written_for() == ({"todo-1"}, {"user-1"})
 
     async def test_a_queued_dispatch_is_not_a_finished_run(self):
         """The executor was busy, so the request was queued and answered with an
@@ -1102,6 +1132,29 @@ class TestExecuteViaAgent:
         # with no user content and raise before the model is called.
         assert kwargs["request"].messages == [{"role": "user", "content": prompt}]
 
+    async def test_it_reads_the_canvas_and_activity_for_this_todo_and_user(self):
+        """Both reads are keyed to *this* todo and *this* user, and both results
+        actually reach the prompt. A swapped or dropped arg pulls another user's
+        history (or none) into the run, and an activity read that never lands
+        silently strips the log the prompt was extended to carry."""
+        read_canvas = AsyncMock(return_value="## Current State\nall good")
+        read_activity = AsyncMock(return_value="- 2026-09-01 started")
+        agent = AsyncMock(return_value=SilentRunResult(message="ok", tool_data={}))
+        with (
+            patch(f"{MODULE}.call_agent_silent", agent),
+            patch(f"{MODULE}.read_canvas", read_canvas),
+            patch(f"{MODULE}.read_activity", read_activity),
+            patch(f"{MODULE}.tracked_todo_service.append_activity_entry", AsyncMock()),
+            patch(f"{MODULE}._collect_reference_context", AsyncMock(return_value="")),
+        ):
+            await _execute_via_agent(_doc(id="todo-7"), "user-9", user_data={"user_id": "user-9"})
+
+        read_canvas.assert_awaited_once_with("todo-7", "user-9")
+        read_activity.assert_awaited_once_with("todo-7", "user-9")
+        prompt = agent.await_args.kwargs["request"].message
+        assert "Canvas (canvas.md):\n## Current State\nall good" in prompt
+        assert "Recent activity (activity.md):\n- 2026-09-01 started" in prompt
+
     async def test_a_triggered_run_stamps_the_origin_on_the_trigger_context(self):
         """A trigger fire must carry its origin into trigger_context — without it the
         agent run is stamped as an ordinary scheduled todo and loses attribution."""
@@ -1150,6 +1203,9 @@ class TestExecuteViaAgent:
 
         _start, end = self._entries()
         assert "scheduled run failed (TimeoutError)" in end
+        # The failure marker is the only trace the run left; it must land on this
+        # todo and this user, not a nulled or dropped id.
+        assert self._written_for() == ({"todo-1"}, {"user-1"})
 
     async def test_an_empty_agent_response_is_not_an_error(self):
         agent = AsyncMock(return_value=SilentRunResult(message="", tool_data={}))

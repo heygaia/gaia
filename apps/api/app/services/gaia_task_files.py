@@ -98,7 +98,10 @@ async def _resolve_folder(folder: str, user_id: str) -> TodoDocument:
         if GAIA_TRACKED_LABEL not in doc.labels:
             raise GaiaTaskPathError(f"{folder} is not a tracked todo (no canvas)")
         return doc
-    suffix = folder.rsplit("-", 1)[-1]
+    # `rpartition` splits on the last "-" with no maxsplit argument, so there is
+    # no equivalent maxsplit mutant to suppress and the `[2]` tail stays a real
+    # assertion target (the short id handed to the finder below).
+    suffix = folder.rpartition("-")[2]
     matches = await todo_repository.find_tracked_by_short_id(user_id, short_id=suffix)
     if len(matches) == 1:
         return matches[0]

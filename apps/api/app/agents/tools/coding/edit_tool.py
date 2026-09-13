@@ -156,7 +156,7 @@ def _apply_replacement(
         )
     if replace_all:
         return content.replace(old_string, new_string), occurrences
-    return content.replace(old_string, new_string, 1), 1
+    return content.replace(old_string, new_string, 1), 1  # pragma: no mutate — occurrences==1
 
 
 def _emit_edit(abs_path: str, size_bytes: int, replaced: int, session_id: str | None) -> str:
@@ -238,7 +238,7 @@ async def _do_edit(sbx: AsyncSandbox, target: EditTarget, patch: EditPatch) -> s
         return outcome
     new_content, replaced = outcome
 
-    new_bytes = new_content.encode("utf-8")
+    new_bytes = new_content.encode("utf-8")  # pragma: no mutate — "UTF-8" is the same codec
     real_mtime = await atomic_write(sbx, target.abs_path, new_bytes)
 
     # Surface the edit live in chat when it lands under artifacts/ — same path

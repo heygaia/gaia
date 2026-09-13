@@ -140,6 +140,7 @@ class TestWriteCanvas:
         ok = await write_canvas(TODO_ID, USER_ID, "new content")
 
         assert ok is True
+        assert mock_repo.replace_note_fields.await_args.args == (TODO_ID, USER_ID)
         kwargs = mock_repo.replace_note_fields.await_args.kwargs
         assert kwargs["update"].canvas_content == "new content"
         assert kwargs["update"].title is None  # only the canvas body is replaced
@@ -162,3 +163,9 @@ class TestAppendLog:
             TODO_ID, USER_ID, field="log_content", suffix="\naudit v2"
         )
         mock_sync.assert_called_once_with(USER_ID)
+
+    async def test_keeps_a_leading_newline_content_as_is(self, mock_repo, mock_sync):
+        mock_repo.append_text_field.return_value = _todo_doc()
+
+        assert await append_log(TODO_ID, USER_ID, "\naudit v2") is True
+        assert mock_repo.append_text_field.await_args.kwargs["suffix"] == "\naudit v2"

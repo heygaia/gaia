@@ -421,7 +421,7 @@ async def _execute_via_agent(
     todo_id = doc.id
 
     canvas_content: str | None = None
-    activity_content: str | None = None
+    activity_content: str | None = None  # pragma: no mutate — falsy; reassigned before truth test
     try:
         canvas_content = await read_canvas(todo_id, user_id)
         activity_content = await read_activity(todo_id, user_id)

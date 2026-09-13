@@ -685,6 +685,9 @@ class TestFormatCreateOutput:
 
         assert "/workspace/gaia-tasks/fix-the-thing-5f10e407/canvas.md" in out
         assert "/workspace/gaia-tasks/fix-the-thing-5f10e407/activity.md" in out
+        # The instruction sentence is verbatim: it is the model's cue for which
+        # tools read/edit the notes.
+        assert " (dated log). Read and edit them with the read / edit / write tools." in out
         assert "update_tracked_todo_canvas" not in out
 
 
