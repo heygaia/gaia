@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from app.services.storage._vfs_common import (
+    READONLY_DIR_MODE,
     READONLY_MODE,
     RW_MODE,
     SHORTID_LEN,
@@ -177,27 +178,37 @@ def test_moving_text_from_the_canvas_into_the_log_changes_the_body_hash() -> Non
     # identical: the agent moves a line from canvas.md to log.md, the hash does
     # not move, and neither file is ever rewritten.
     meta: dict[str, Any] = {"title": "t"}
-    assert hash_body_with_meta("ab", "", meta) != hash_body_with_meta("a", "b", meta)
+    assert hash_body_with_meta("ab", "", meta=meta) != hash_body_with_meta("a", "b", meta=meta)
 
 
 def test_the_same_body_and_meta_hash_identically() -> None:
     meta: dict[str, Any] = {"title": "t"}
-    first = hash_body_with_meta("c", "l", meta)
-    second = hash_body_with_meta("c", "l", meta)
+    first = hash_body_with_meta("c", "l", meta=meta)
+    second = hash_body_with_meta("c", "l", meta=meta)
     assert first == second
+
+
+def test_the_digest_is_pinned_to_the_nul_separated_scheme() -> None:
+    """The exact digest: separates bodies (and meta) with a NUL byte, not a
+    different delimiter. Any change to the separator re-materializes every
+    folder once; pinning the value is how that is caught."""
+    assert (
+        hash_body_with_meta("c", "l", meta={"title": "t"})
+        == "b5420a409a6295d9c9f15861a977f692722e8bfb3299195cde23a303deb914cd"
+    )
 
 
 def test_a_metadata_only_edit_still_changes_the_body_hash() -> None:
     # Renaming a task touches neither canvas nor log; if meta is left out of the
     # digest the folder keeps the old title in meta.json indefinitely.
-    assert hash_body_with_meta("c", "l", {"title": "old"}) != hash_body_with_meta(
-        "c", "l", {"title": "new"}
+    assert hash_body_with_meta("c", "l", meta={"title": "old"}) != hash_body_with_meta(
+        "c", "l", meta={"title": "new"}
     )
 
 
 def test_the_body_hash_of_an_empty_task_is_still_stable() -> None:
-    first = hash_body_with_meta("", "", {})
-    second = hash_body_with_meta("", "", {})
+    first = hash_body_with_meta("", "", meta={})
+    second = hash_body_with_meta("", "", meta={})
     assert first == second
 
 
@@ -396,6 +407,18 @@ def test_read_only_bodies_nested_several_levels_deep_are_removed(tmp_path: Path)
     deep = tmp_path / "tree" / "a" / "b"
     deep.mkdir(parents=True)
     write_readonly_body(deep / "log.md", "x")
+    remove_tree(tmp_path / "tree")
+    assert not (tmp_path / "tree").exists()
+
+
+def test_a_read_only_child_directory_is_made_writable_and_removed(tmp_path: Path) -> None:
+    """A 0555 child folder cannot be emptied without first chmod-ing it back to
+    writable; the pre-pass is what lets rmtree descend. Pin it with an actual
+    read-only child (the other tests only nest 0755 `mkdir` dirs)."""
+    sub = tmp_path / "tree" / "sub"
+    sub.mkdir(parents=True)
+    write_readonly_body(sub / "canvas.md", "x")
+    sub.chmod(READONLY_DIR_MODE)
     remove_tree(tmp_path / "tree")
     assert not (tmp_path / "tree").exists()
 
